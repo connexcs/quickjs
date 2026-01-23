@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { memfs, type NestedDirectoryJSON } from 'memfs'
 import assertModule from './modules/assert.js'
 import bufferModule from './modules/buffer.js'
+import cryptoModule from './modules/crypto.js'
 import eventModule from './modules/events.js'
 import fsModule from './modules/fs.js'
 import fsPromisesModule from './modules/fs_promises.js'
@@ -66,7 +67,7 @@ export const createVirtualFileSystem = (runtimeOptions: RuntimeOptions = {}) => 
 					'index.js': "throw new Error('module console not implemented')",
 				},
 				crypto: {
-					'index.js': "throw new Error('module crypto not implemented')",
+					'index.js': cryptoModule,
 				},
 				dgram: {
 					'index.js': "throw new Error('module dgram not implemented')",
