@@ -1,6 +1,47 @@
 import type { IFs, NestedDirectoryJSON } from 'memfs'
 import type { default as TS } from 'typescript'
 
+/**
+ * Crypto module security options
+ */
+export type CryptoOptions = {
+	/**
+	 * Enable or disable the crypto module entirely
+	 * @default true
+	 */
+	enabled?: boolean
+
+	/**
+	 * Maximum size in bytes for randomBytes() calls
+	 * @default 65536 (64KB)
+	 */
+	maxRandomBytes?: number
+
+	/**
+	 * Maximum iterations allowed for pbkdf2Sync()
+	 * @default 1000000
+	 */
+	maxPbkdf2Iterations?: number
+
+	/**
+	 * Maximum cost parameter (N) for scryptSync()
+	 * @default 32768
+	 */
+	maxScryptCost?: number
+
+	/**
+	 * Maximum key length in bytes for key derivation functions
+	 * @default 1024
+	 */
+	maxKeyLength?: number
+
+	/**
+	 * Maximum key length for HKDF operations
+	 * @default 1024
+	 */
+	maxHkdfKeyLength?: number
+}
+
 export type RuntimeOptions = {
 	/**
 	 * The maximum time in seconds a script can run.
@@ -95,4 +136,10 @@ export type RuntimeOptions = {
 	 * The Typescript compiler options for transpiling files from typescript to JavaScript
 	 */
 	transformCompilerOptions?: TS.CompilerOptions
+
+	/**
+	 * Crypto module security options
+	 * Configure limits and restrictions for cryptographic operations
+	 */
+	crypto?: CryptoOptions
 }

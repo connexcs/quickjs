@@ -8,6 +8,10 @@ if (!hostCrypto) {
   throw new Error('Node.js crypto module is not available in the host runtime')
 }
 
+if (hostCrypto.disabled) {
+  throw new Error('Crypto module is disabled by sandbox configuration')
+}
+
 // Hash functions - returns object with update/digest methods for API compatibility
 export const createHash = (algorithm) => {
   let dataBuffer = ''

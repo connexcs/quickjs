@@ -4,35 +4,41 @@ This document outlines security improvements needed for the crypto module before
 
 ---
 
-## 🔴 High Priority
+## ✅ Completed
 
-### 1. Resource Exhaustion Protection
+### 1. Resource Exhaustion Protection ✅
 
 **Issue**: No limits on expensive crypto operations that could cause DoS.
 
 **Tasks**:
-- [ ] Add `maxRandomBytes` limit (default: 65536 / 64KB)
-- [ ] Add `maxPbkdf2Iterations` limit (default: 1,000,000)
-- [ ] Add `maxScryptCost` limit (default: 32768)
-- [ ] Add `maxKeyLength` limit (default: 1024 bytes)
-- [ ] Add `maxHkdfKeyLength` limit (default: 1024 bytes)
+- [x] Add `maxRandomBytes` limit (default: 65536 / 64KB)
+- [x] Add `maxPbkdf2Iterations` limit (default: 1,000,000)
+- [x] Add `maxScryptCost` limit (default: 32768)
+- [x] Add `maxKeyLength` limit (default: 1024 bytes)
+- [x] Add `maxHkdfKeyLength` limit (default: 1024 bytes)
 
-**Implementation Location**: `src/sandbox/provide/provideCrypto.ts`
-
-```typescript
-// Example implementation
-const cryptoConfig = options.crypto || {}
-const maxRandomBytes = cryptoConfig.maxRandomBytes || 65536
-
-randomBytesHex: (size: number) => {
-  if (size > maxRandomBytes) {
-    throw new Error(`Random bytes size ${size} exceeds maximum ${maxRandomBytes}`)
-  }
-  return crypto.randomBytes(size).toString('hex')
-}
-```
+**Implementation**: `src/sandbox/provide/provideCrypto.ts`
+**Tests**: `src/test/sync/crypto-security.test.ts`
 
 ---
+
+### 4. RuntimeOptions Extension ✅
+
+**Issue**: No way for users to configure crypto security settings.
+
+**Tasks**:
+- [x] Add `crypto` option to `RuntimeOptions` interface
+- [x] Add `crypto` option to `SandboxOptions` interface
+- [x] Add sensible defaults
+- [x] Allow complete disabling of crypto module
+
+**Implementation**: 
+- `src/types/RuntimeOptions.ts` - Added `CryptoOptions` interface
+- `src/types/SandboxOptions.ts` - Added `crypto` option
+
+---
+
+## 🔴 High Priority
 
 ### 2. Algorithm Whitelisting
 
@@ -81,41 +87,7 @@ const SAFE_CURVES = ['prime256v1', 'secp384r1', 'secp521r1']
 
 ## 🟡 Medium Priority
 
-### 4. RuntimeOptions Extension
-
-**Issue**: No way for users to configure crypto security settings.
-
-**Tasks**:
-- [ ] Add `crypto` option to `RuntimeOptions` interface
-- [ ] Document all crypto configuration options
-- [ ] Add sensible defaults
-- [ ] Allow complete disabling of crypto module
-
-**Proposed Interface**:
-```typescript
-interface CryptoOptions {
-  enabled?: boolean // Default: true
-  
-  // Resource limits
-  maxRandomBytes?: number
-  maxPbkdf2Iterations?: number
-  maxScryptCost?: number
-  maxKeyLength?: number
-  
-  // Algorithm restrictions
-  allowedHashAlgorithms?: string[]
-  allowedCipherAlgorithms?: string[]
-  allowedCurves?: string[]
-  
-  // Security modes
-  enforceStrongAlgorithms?: boolean // Default: false
-  allowWeakAlgorithms?: boolean // Default: true (for backwards compat)
-}
-```
-
----
-
-### 5. Error Handling Security
+### 4. Error Handling Security
 
 **Issue**: Crypto errors may leak sensitive information.
 
@@ -138,7 +110,7 @@ try {
 
 ---
 
-### 6. Rate Limiting
+### 5. Rate Limiting
 
 **Issue**: No protection against rapid repeated crypto operations.
 
@@ -152,7 +124,7 @@ try {
 
 ## 🟢 Low Priority
 
-### 7. Audit Logging
+### 6. Audit Logging
 
 **Issue**: No visibility into crypto operations for security auditing.
 
@@ -164,7 +136,7 @@ try {
 
 ---
 
-### 8. Authenticated Encryption (AEAD)
+### 7. Authenticated Encryption (AEAD)
 
 **Issue**: Current implementation focuses on CBC mode without authentication.
 
@@ -176,7 +148,7 @@ try {
 
 ---
 
-### 9. Secure Key Handling
+### 8. Secure Key Handling
 
 **Issue**: Keys are handled as plain objects/arrays.
 
@@ -188,7 +160,7 @@ try {
 
 ---
 
-### 10. Documentation
+### 9. Documentation
 
 **Tasks**:
 - [ ] Document all security considerations in README

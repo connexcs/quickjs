@@ -7,7 +7,7 @@ import type {
 } from 'quickjs-emscripten-core'
 import type { default as TS } from 'typescript'
 import type { Prettify } from './Prettify.js'
-import type { RuntimeOptions } from './RuntimeOptions.js'
+import type { CryptoOptions, RuntimeOptions } from './RuntimeOptions.js'
 
 export type SandboxBaseOptions = {
 	/**
@@ -132,6 +132,11 @@ export type SandboxBaseOptions = {
 	 * @default 10
 	 */
 	maxIntervalCount?: number
+	/**
+	 * Crypto module security options
+	 * Configure limits and restrictions for cryptographic operations
+	 */
+	crypto?: CryptoOptions
 }
 
 /**
