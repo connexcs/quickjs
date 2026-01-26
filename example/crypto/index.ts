@@ -25,7 +25,9 @@ const main = async () => {
   `),
 		options,
 	)
-	console.log('SHA256 hash of "Hello, World!":', hashResult.data)
+	if (hashResult.ok) {
+		console.log('SHA256 hash of "Hello, World!":', hashResult.data)
+	}
 
 	// Test 2: HMAC
 	console.log('\n2. Testing HMAC:')
@@ -41,7 +43,9 @@ const main = async () => {
   `),
 		options,
 	)
-	console.log('HMAC-SHA256:', hmacResult.data)
+	if (hmacResult.ok) {
+		console.log('HMAC-SHA256:', hmacResult.data)
+	}
 
 	// Test 3: Random bytes
 	console.log('\n3. Testing random bytes:')
@@ -56,7 +60,9 @@ const main = async () => {
   `),
 		options,
 	)
-	console.log('Random 16 bytes (hex):', randomResult.data)
+	if (randomResult.ok) {
+		console.log('Random 16 bytes (hex):', randomResult.data)
+	}
 
 	// Test 4: Random UUID
 	console.log('\n4. Testing random UUID:')
@@ -70,7 +76,9 @@ const main = async () => {
   `),
 		options,
 	)
-	console.log('Random UUID:', uuidResult.data)
+	if (uuidResult.ok) {
+		console.log('Random UUID:', uuidResult.data)
+	}
 
 	// Test 5: PBKDF2
 	console.log('\n5. Testing PBKDF2:')
@@ -85,7 +93,9 @@ const main = async () => {
   `),
 		options,
 	)
-	console.log('PBKDF2 derived key (first 32 chars):', pbkdf2Result.data?.substring(0, 32) + '...')
+	if (pbkdf2Result.ok) {
+		console.log('PBKDF2 derived key (first 32 chars):', (pbkdf2Result.data as string)?.substring(0, 32) + '...')
+	}
 
 	// Test 6: Get available algorithms
 	console.log('\n6. Testing algorithm lists:')
@@ -103,7 +113,9 @@ const main = async () => {
   `),
 		options,
 	)
-	console.log('Available algorithms:', algorithmsResult.data)
+	if (algorithmsResult.ok) {
+		console.log('Available algorithms:', algorithmsResult.data)
+	}
 
 	// Test 7: Encrypt/Decrypt with AES-256-CBC
 	console.log('\n7. Testing AES-256-CBC encryption/decryption:')
@@ -132,7 +144,9 @@ const main = async () => {
   `),
 		options,
 	)
-	console.log('Encryption test:', encryptResult.data)
+	if (encryptResult.ok) {
+		console.log('Encryption test:', encryptResult.data)
+	}
 
 	// Test 8: Timing safe equal
 	console.log('\n8. Testing timing safe equal:')
@@ -161,7 +175,9 @@ const main = async () => {
   `),
 		options,
 	)
-	console.log('Timing safe comparison:', timingSafeResult.data)
+	if (timingSafeResult.ok) {
+		console.log('Timing safe comparison:', timingSafeResult.data)
+	}
 
 	console.log('\n✅ All crypto tests completed successfully!')
 }

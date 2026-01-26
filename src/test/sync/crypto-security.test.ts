@@ -32,10 +32,12 @@ describe('Crypto Security Limits', () => {
 		expect(result.ok).toBe(true)
 		if (!result.ok) {
 			console.log('Unexpected error:', result)
+			return
 		}
-		expect(result.data.error).toBe(true)
-		expect(result.data.message).toContain('CRYPTO_LIMIT_EXCEEDED')
-		expect(result.data.message).toContain('randomBytes')
+		const data = result.data as { error: boolean; message: string }
+		expect(data.error).toBe(true)
+		expect(data.message).toContain('CRYPTO_LIMIT_EXCEEDED')
+		expect(data.message).toContain('randomBytes')
 	})
 
 	test('should allow randomBytes within limit', async () => {
@@ -59,6 +61,7 @@ describe('Crypto Security Limits', () => {
 		)
 
 		expect(result.ok).toBe(true)
+		if (!result.ok) return
 		expect(result.data).toBe(50)
 	})
 
@@ -90,10 +93,12 @@ describe('Crypto Security Limits', () => {
 		expect(result.ok).toBe(true)
 		if (!result.ok) {
 			console.log('Unexpected error:', result)
+			return
 		}
-		expect(result.data.error).toBe(true)
-		expect(result.data.message).toContain('CRYPTO_LIMIT_EXCEEDED')
-		expect(result.data.message).toContain('pbkdf2')
+		const data = result.data as { error: boolean; message: string }
+		expect(data.error).toBe(true)
+		expect(data.message).toContain('CRYPTO_LIMIT_EXCEEDED')
+		expect(data.message).toContain('pbkdf2')
 	})
 
 	test('should enforce maxKeyLength limit', async () => {
@@ -124,10 +129,12 @@ describe('Crypto Security Limits', () => {
 		expect(result.ok).toBe(true)
 		if (!result.ok) {
 			console.log('Unexpected error:', result)
+			return
 		}
-		expect(result.data.error).toBe(true)
-		expect(result.data.message).toContain('CRYPTO_LIMIT_EXCEEDED')
-		expect(result.data.message).toContain('key length')
+		const data = result.data as { error: boolean; message: string }
+		expect(data.error).toBe(true)
+		expect(data.message).toContain('CRYPTO_LIMIT_EXCEEDED')
+		expect(data.message).toContain('key length')
 	})
 
 	test('should enforce maxScryptCost limit', async () => {
@@ -158,10 +165,12 @@ describe('Crypto Security Limits', () => {
 		expect(result.ok).toBe(true)
 		if (!result.ok) {
 			console.log('Unexpected error:', result)
+			return
 		}
-		expect(result.data.error).toBe(true)
-		expect(result.data.message).toContain('CRYPTO_LIMIT_EXCEEDED')
-		expect(result.data.message).toContain('scrypt')
+		const data = result.data as { error: boolean; message: string }
+		expect(data.error).toBe(true)
+		expect(data.message).toContain('CRYPTO_LIMIT_EXCEEDED')
+		expect(data.message).toContain('scrypt')
 	})
 
 	test('should disable crypto module when enabled is false', async () => {
@@ -193,8 +202,9 @@ describe('Crypto Security Limits', () => {
 		// So result.ok should be false, meaning the script errored
 		if (result.ok) {
 			// If it somehow succeeded, we expect the crypto call to have thrown
-			expect(result.data.error).toBe(true)
-			expect(result.data.message).toContain('disabled')
+			const data = result.data as { error: boolean; message: string }
+			expect(data.error).toBe(true)
+			expect(data.message).toContain('disabled')
 		} else {
 			// The import statement itself should have thrown
 			expect(JSON.stringify(result)).toContain('disabled')
@@ -221,6 +231,7 @@ describe('Crypto Security Limits', () => {
 		)
 
 		expect(result.ok).toBe(true)
+		if (!result.ok) return
 		expect(result.data).toBe(1024)
 	})
 
@@ -249,8 +260,10 @@ describe('Crypto Security Limits', () => {
 		expect(result.ok).toBe(true)
 		if (!result.ok) {
 			console.log('Unexpected error:', result)
+			return
 		}
-		expect(result.data.error).toBe(true)
-		expect(result.data.message).toContain('CRYPTO_INVALID_ARG')
+		const data = result.data as { error: boolean; message: string }
+		expect(data.error).toBe(true)
+		expect(data.message).toContain('CRYPTO_INVALID_ARG')
 	})
 })

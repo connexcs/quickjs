@@ -44,7 +44,7 @@ export const provideCrypto = (
 		createHashAndDigest: (algorithm: string, data: string | Buffer, outputEncoding: string = 'hex') => {
 			const hash = crypto.createHash(algorithm)
 			hash.update(data)
-			return hash.digest(outputEncoding as BufferEncoding)
+			return hash.digest(outputEncoding as crypto.BinaryToTextEncoding)
 		},
 
 		// HMAC - returns hex string directly
@@ -56,7 +56,7 @@ export const provideCrypto = (
 		) => {
 			const hmac = crypto.createHmac(algorithm, key)
 			hmac.update(data)
-			return hmac.digest(outputEncoding as BufferEncoding)
+			return hmac.digest(outputEncoding as crypto.BinaryToTextEncoding)
 		},
 
 		// Random functions with size limits
