@@ -1,6 +1,6 @@
 {
-	"name": "@sebastianwessel/quickjs",
-	"version": "3.0.0",
+	"name": "@connexcs/quickjs",
+	"version": "3.0.2",
 	"description": "A typescript package to execute JavaScript and TypeScript code in a WebAssembly QuickJS sandbox",
 	"engines": {
 		"node": ">=18.0.0"
@@ -57,6 +57,7 @@
 		"example:ai": "bun example/ai/index.ts",
 		"example:async": "bun example/async/index.ts",
 		"example:basic": "bun example/basic/index.ts",
+		"example:crypto": "bun example/crypto/index.ts",
 		"example:function": "bun example/function-call/index.ts",
 		"example:server": "bun example/server/server.ts",
 		"example:tests": "bun example/run-tests/index.ts",

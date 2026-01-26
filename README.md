@@ -4,6 +4,9 @@ This TypeScript package allows you to safely execute **JavaScript AND TypeScript
 
 **[View the full documentation](https://sebastianwessel.github.io/quickjs/)** | **[Find examples in the repository](https://github.com/sebastianwessel/quickjs/tree/main/example)** | **[Online Playground](https://sebastianwessel.github.io/quickjs/playground.html)**
 
+## Fork
+This is a forked version of the parent respository kept at https://github.com/sebastianwessel/quickjs
+
 ## Features
 
 - **Security**: Run untrusted JavaScript and TypeScript code in a safe, isolated environment.
