@@ -189,7 +189,10 @@ export const getDefaultFetchAdapter = (adapterOptions: GetFetchAdapterOptions = 
 						return mapResponse(res)
 					}
 					const content = options.fs.readFileSync(filePath)
-					const res = new Response(content, { status: 200, statusText: 'OK' })
+					// memfs `readFileSync` returns `string | Buffer`; `Buffer` is a valid body at runtime
+					// but not part of the DOM `BodyInit` type, so normalise it to a `Uint8Array`.
+					const body: BodyInit = typeof content === 'string' ? content : new Uint8Array(content)
+					const res = new Response(body, { status: 200, statusText: 'OK' })
 					return mapResponse(res)
 				}
 
