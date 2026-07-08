@@ -29,11 +29,10 @@ export const loadQuickJs = async (variant: LoadQuickJsOptions) => {
 		sandboxedFunction: SandboxFunction<T>,
 		sandboxOptions: SandboxOptions = {},
 	): Promise<T> => {
+		const scope = new Scope()
+		const ctx = scope.manage(module.newContext())
+
 		try {
-			const scope = new Scope()
-
-			const ctx = scope.manage(module.newContext())
-
 			if (sandboxOptions.executionTimeout) {
 				ctx.runtime.setInterruptHandler(shouldInterruptAfterDeadline(Date.now() + sandboxOptions.executionTimeout))
 			}
@@ -72,7 +71,7 @@ export const loadQuickJs = async (variant: LoadQuickJsOptions) => {
 			prepareSandbox(ctx, scope, sandboxOptions, fs)
 
 			// Run the given Function
-			const result = await executeSandboxFunction({
+			return await executeSandboxFunction({
 				ctx,
 				fs,
 				scope,
@@ -80,11 +79,15 @@ export const loadQuickJs = async (variant: LoadQuickJsOptions) => {
 				sandboxedFunction,
 				transpileFile,
 			})
-
-			scope.dispose()
-			return result
 		} catch (error) {
 			throw error instanceof Error ? error : new Error('Internal Error')
+		} finally {
+			// Unregister the module loader before disposing the scope. `setModuleLoader` enables a
+			// native module-loader trampoline on the runtime that is not freed by disposing the
+			// context/runtime handles alone - leaving it registered leaks WASM table slots on every
+			// `runSandboxed` call and eventually exhausts the table ("table index is out of bounds").
+			ctx.runtime.removeModuleLoader()
+			scope.dispose()
 		}
 	}
 
