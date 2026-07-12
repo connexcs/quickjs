@@ -81,7 +81,7 @@ export const loadAsyncQuickJs = async (variant: LoadAsyncQuickJsOptions) => {
 				const fs = setupFileSystem(sandboxOptions)
 
 				// TypeScript Support:
-				const { transpileVirtualFs, transpileFile } = await getTypescriptSupport(
+				const { transpileVirtualFs, transpileFile, remapStack } = await getTypescriptSupport(
 					sandboxOptions.transformTypescript,
 					sandboxOptions.typescriptImportFile,
 					sandboxOptions.transformCompilerOptions,
@@ -111,6 +111,7 @@ export const loadAsyncQuickJs = async (variant: LoadAsyncQuickJsOptions) => {
 					sandboxOptions,
 					sandboxedFunction,
 					transpileFile,
+					remapStack,
 				})
 			} finally {
 				// Reset every per-runtime setting this call may have changed, so the shared runtime is

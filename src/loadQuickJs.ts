@@ -61,7 +61,7 @@ export const loadQuickJs = async (variant: LoadQuickJsOptions) => {
 				const fs = setupFileSystem(sandboxOptions)
 
 				// TypeScript Support:
-				const { transpileVirtualFs, transpileFile } = await getTypescriptSupport(
+				const { transpileVirtualFs, transpileFile, remapStack } = await getTypescriptSupport(
 					sandboxOptions.transformTypescript,
 					sandboxOptions.typescriptImportFile,
 					sandboxOptions.transformCompilerOptions,
@@ -90,6 +90,7 @@ export const loadQuickJs = async (variant: LoadQuickJsOptions) => {
 					sandboxOptions,
 					sandboxedFunction,
 					transpileFile,
+					remapStack,
 				})
 			} catch (error) {
 				throw error instanceof Error ? error : new Error('Internal Error')

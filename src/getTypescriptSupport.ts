@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import type { IFs, NestedDirectoryJSON } from 'memfs'
 import type { default as TS } from 'typescript'
+import { type DecodedMappings, originalPositionFor, parseMappings } from './sandbox/sourceMap.js'
 
 export type TranspileNestedJsonOptions = {
 	fileExtensions?: string[]
@@ -10,6 +11,17 @@ export type TranspileVirtualFsOptions = {
 	fileExtensions?: string[]
 	startPath?: string
 }
+
+/**
+ * Matches a stack frame's location: `(<file>:<line>[:<col>])`.
+ * QuickJS guest frames look like `    at handler (/src/script:6:15)`. Host frames appended
+ * after a `Host:` marker point at real filesystem paths and simply won't have a stored map,
+ * so this same rewrite leaves them untouched.
+ */
+const STACK_FRAME_LOCATION = /\(([^()]+?):(\d+)(?::(\d+))?\)/g
+
+/** No-op stack remapper used when TypeScript support is disabled. */
+const identityRemapStack = (stack: string): string => stack
 
 /**
  * Add support for handling typescript files and code.
@@ -36,6 +48,7 @@ export const getTypescriptSupport = async (
 			transpileVirtualFs: (fs: IFs, _options?: TranspileVirtualFsOptions): IFs => {
 				return fs
 			},
+			remapStack: identityRemapStack,
 		}
 	}
 
@@ -56,22 +69,103 @@ export const getTypescriptSupport = async (
 		esModuleInterop: true,
 		strict: false,
 		allowSyntheticDefaultImports: true,
+		// Emit a source map so we can translate emitted-JS stack positions back to the
+		// original `.ts` source. Kept separate (not inline) — we consume it in-process.
+		sourceMap: true,
+		inlineSourceMap: false,
 		...options,
 	}
 
 	/**
-	 * Transpile a single File
+	 * Decoded source maps for this `getTypescriptSupport` call, keyed by the virtual path
+	 * QuickJS reports in stack frames (e.g. `/src/script`). Created fresh per call, so it is
+	 * scoped to the `runSandboxed` call and garbage-collected with it — nothing to dispose.
+	 */
+	const sourceMaps = new Map<string, DecodedMappings>()
+
+	// TypeScript with `sourceMap: true` appends this comment to the emitted JS; strip it so
+	// it never leaks into the mounted/eval'd guest code.
+	const SOURCE_MAP_URL_COMMENT = /\n?\/\/# sourceMappingURL=.*\s*$/
+
+	/**
+	 * Register a decoded source map under a virtual path. The key is normalized to how
+	 * QuickJS reports the file in stack frames: user files are mounted without an extension
+	 * (e.g. `/src/script`), so we store both the extension-less path and the `.js` variant.
+	 */
+	const registerSourceMap = (virtualPath: string, sourceMapText: string | undefined): void => {
+		if (!sourceMapText) {
+			return
+		}
+		try {
+			const map = JSON.parse(sourceMapText) as { mappings?: string }
+			if (!map.mappings) {
+				return
+			}
+			const decoded = parseMappings(map.mappings)
+			sourceMaps.set(virtualPath, decoded)
+			const withoutJs = virtualPath.replace(/\.js$/, '')
+			if (withoutJs !== virtualPath) {
+				sourceMaps.set(withoutJs, decoded)
+			}
+		} catch {
+			// A malformed map must never break transpilation; just skip remapping this file.
+		}
+	}
+
+	/**
+	 * Transpile TypeScript to JavaScript and, when a `fileName` is given, register the
+	 * emitted source map under that virtual path for later stack remapping.
 	 *
-	 * @param params source typescript code
+	 * @returns javascript code (with the trailing sourceMappingURL comment stripped)
+	 */
+	const transpileWithMap = (input: string, fileName?: string): string => {
+		const out = ts.transpileModule(input, { compilerOptions, fileName })
+		if (fileName) {
+			registerSourceMap(fileName, out.sourceMapText)
+		}
+		return out.outputText.replace(SOURCE_MAP_URL_COMMENT, '')
+	}
+
+	/**
+	 * Transpile a single File.
+	 *
+	 * Keeps the `ts.transpile`-compatible signature (string in, string out) so existing
+	 * callers are unaffected. When a `fileName` is supplied, the emitted source map is
+	 * captured so stack frames pointing at that path can be remapped to the original source.
+	 *
+	 * @param input source typescript code
 	 * @returns javascript code
 	 */
 	const transpileFile: typeof ts.transpile = (
 		input: string,
-		cpOptions = compilerOptions,
+		_cpOptions = compilerOptions,
 		fileName?: string,
-		diagnostics?: TS.Diagnostic[],
-		moduleName?: string,
-	) => ts.transpile(input, cpOptions, fileName, diagnostics, moduleName)
+		_diagnostics?: TS.Diagnostic[],
+		_moduleName?: string,
+	) => transpileWithMap(input, fileName)
+
+	/**
+	 * Rewrite each guest stack frame's line/column back to the original TypeScript source
+	 * using the maps captured during transpilation. Frames whose file has no stored map
+	 * (the entry wrapper, node_modules, and the appended `Host:` frames) pass through
+	 * unchanged. Never throws on an empty or absent stack.
+	 */
+	const remapStack = (stack: string): string => {
+		if (!stack || sourceMaps.size === 0) {
+			return stack
+		}
+		return stack.replace(STACK_FRAME_LOCATION, (whole, file: string, line: string, col?: string) => {
+			const mappings = sourceMaps.get(file)
+			if (!mappings) {
+				return whole
+			}
+			const pos = originalPositionFor(mappings, Number(line), col ? Number(col) : 0)
+			if (!pos) {
+				return whole
+			}
+			return `(${file}:${pos.line}:${pos.column})`
+		})
+	}
 
 	/**
 	 * Iterates through the given JSON - NestedDirectoryJSON for defining the virtual file system.
@@ -157,5 +251,5 @@ export const getTypescriptSupport = async (
 		return fs
 	}
 
-	return { transpileFile, transpileNestedDirectoryJSON, transpileVirtualFs }
+	return { transpileFile, transpileNestedDirectoryJSON, transpileVirtualFs, remapStack }
 }

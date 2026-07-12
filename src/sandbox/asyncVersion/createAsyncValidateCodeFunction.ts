@@ -4,7 +4,7 @@ import type { SandboxValidateCode } from '../../types/SandboxValidateCode.js'
 import { handleEvalError } from '../handleEvalError.js'
 
 export const createAsyncValidateCodeFunction = (input: CodeFunctionAsyncInput): SandboxValidateCode => {
-	const { ctx } = input
+	const { ctx, remapStack } = input
 	return async (code, filename = '/src/index.js', evalOptions?) => {
 		try {
 			ctx
@@ -21,7 +21,7 @@ export const createAsyncValidateCodeFunction = (input: CodeFunctionAsyncInput): 
 				.dispose()
 			return { ok: true } as OkResponseCheck
 		} catch (err) {
-			return handleEvalError(err)
+			return handleEvalError(err, remapStack)
 		}
 	}
 }

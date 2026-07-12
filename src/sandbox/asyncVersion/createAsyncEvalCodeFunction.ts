@@ -10,7 +10,7 @@ import { handleToNative } from '../handleToNative/handleToNative.js'
 import { provideTimingFunctions } from '../provide/provideTimingFunctions.js'
 
 export const createAsyncEvalCodeFunction = (input: CodeFunctionAsyncInput, scope: Scope): SandboxEvalCode => {
-	const { ctx, sandboxOptions, transpileFile } = input
+	const { ctx, sandboxOptions, transpileFile, remapStack } = input
 	return async (code, filename = '/src/index.js', evalOptions?) => {
 		const eventLoopinterval = createTimeInterval(() => ctx.runtime.executePendingJobs(), 0)
 
@@ -30,7 +30,7 @@ export const createAsyncEvalCodeFunction = (input: CodeFunctionAsyncInput, scope
 		}
 
 		try {
-			const jsCode = transpileFile(code)
+			const jsCode = transpileFile(code, undefined, filename)
 			const evalResult = await ctx.evalCodeAsync(jsCode, filename, {
 				strict: true,
 				strip: false,
@@ -61,7 +61,7 @@ export const createAsyncEvalCodeFunction = (input: CodeFunctionAsyncInput, scope
 
 			return { ok: true, data: result } as OkResponse
 		} catch (err) {
-			return handleEvalError(err)
+			return handleEvalError(err, remapStack)
 		} finally {
 			disposeStep()
 		}

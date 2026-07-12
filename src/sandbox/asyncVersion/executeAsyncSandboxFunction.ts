@@ -12,10 +12,11 @@ export const executeAsyncSandboxFunction = async <T>(input: {
 	scope: Scope
 	sandboxOptions: SandboxAsyncOptions
 	sandboxedFunction: AsyncSandboxFunction<T>
-	transpileFile: (input: string) => string
+	transpileFile: CodeFunctionAsyncInput['transpileFile']
+	remapStack: (stack: string) => string
 }) => {
-	const { ctx, sandboxOptions, sandboxedFunction, fs, transpileFile } = input
-	const opt: CodeFunctionAsyncInput = { ctx, sandboxOptions, transpileFile }
+	const { ctx, sandboxOptions, sandboxedFunction, fs, transpileFile, remapStack } = input
+	const opt: CodeFunctionAsyncInput = { ctx, sandboxOptions, transpileFile, remapStack }
 	const evalCode = createAsyncEvalCodeFunction(opt, input.scope)
 	const validateCode = createAsyncValidateCodeFunction(opt)
 	return await sandboxedFunction({ ctx, evalCode, validateCode, mountedFs: fs })
