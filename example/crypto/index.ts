@@ -94,7 +94,7 @@ const main = async () => {
 		options,
 	)
 	if (pbkdf2Result.ok) {
-		console.log('PBKDF2 derived key (first 32 chars):', (pbkdf2Result.data as string)?.substring(0, 32) + '...')
+		console.log('PBKDF2 derived key (first 32 chars):', `${(pbkdf2Result.data as string)?.substring(0, 32)}...`)
 	}
 
 	// Test 6: Get available algorithms

@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.1.2/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
 	"assist": { "actions": { "source": { "organizeImports": "on" } } },
 	"files": {
 		"includes": [
@@ -7,20 +7,21 @@
 			"!**/dist",
 			"!**/node_modules",
 			"!**/.tshy",
-			"!**/build/**",
+			"!**/build",
 			"!**/cookieconsent2.js",
-			"!**/cache/**",
+			"!**/cache",
 			"!**/cookieconsent-init2.js",
 			"!**/cookieconsent.css",
 			"!**/docs",
 			"!**/.tshy-build",
-			"!**/website/.vitepress/.temp"
+			"!**/website/.vitepress/.temp",
+			"!**/website/public/*.svg"
 		]
 	},
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
+			"preset": "recommended",
 			"complexity": {
 				"noForEach": "warn",
 				"noBannedTypes": "warn"
@@ -29,6 +30,7 @@
 				"noExplicitAny": "off"
 			},
 			"style": {
+				"useVueMultiWordComponentNames": "off",
 				"noParameterAssign": "error",
 				"useAsConstAssertion": "error",
 				"useDefaultParameterLast": "error",

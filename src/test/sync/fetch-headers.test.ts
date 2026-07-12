@@ -45,7 +45,11 @@ describe('sync - fetch headers', () => {
 			})
 
 			expect(result.ok).toBeTrue()
-			const data = (result as OkResponse).data as { isHeadersInstance: boolean; hasGetMethod: boolean; hasHasMethod: boolean }
+			const data = (result as OkResponse).data as {
+				isHeadersInstance: boolean
+				hasGetMethod: boolean
+				hasHasMethod: boolean
+			}
 			expect(data.isHeadersInstance).toBeTrue()
 			expect(data.hasGetMethod).toBeTrue()
 			expect(data.hasHasMethod).toBeTrue()
@@ -88,7 +92,11 @@ describe('sync - fetch headers', () => {
 			})
 
 			expect(result.ok).toBeTrue()
-			const data = (result as OkResponse).data as { contentType: string; customHeader: string; missingHeader: string | null }
+			const data = (result as OkResponse).data as {
+				contentType: string
+				customHeader: string
+				missingHeader: string | null
+			}
 			expect(data.contentType).toBe('application/json')
 			expect(data.customHeader).toBe('my-value')
 			expect(data.missingHeader).toBeNull()
@@ -215,8 +223,8 @@ describe('sync - fetch headers', () => {
 			expect(result.ok).toBeTrue()
 			const data = (result as OkResponse).data as { count: number; entries: Array<{ name: string; value: string }> }
 			expect(data.count).toBeGreaterThanOrEqual(2)
-			expect(data.entries.some((e) => e.name === 'x-header-a' && e.value === 'value-a')).toBeTrue()
-			expect(data.entries.some((e) => e.name === 'x-header-b' && e.value === 'value-b')).toBeTrue()
+			expect(data.entries.some(e => e.name === 'x-header-a' && e.value === 'value-a')).toBeTrue()
+			expect(data.entries.some(e => e.name === 'x-header-b' && e.value === 'value-b')).toBeTrue()
 		} finally {
 			global.fetch = originalFetch
 		}

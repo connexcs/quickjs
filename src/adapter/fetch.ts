@@ -68,11 +68,11 @@ const createHeadersObject = (headersObj: Record<string, string>) => ({
 	[HEADERS_MARKER]: true,
 	_headers: headersObj,
 	get(name: string): string | null {
-		const key = Object.keys(headersObj).find((k) => k.toLowerCase() === name.toLowerCase())
+		const key = Object.keys(headersObj).find(k => k.toLowerCase() === name.toLowerCase())
 		return key ? headersObj[key] : null
 	},
 	has(name: string): boolean {
-		return Object.keys(headersObj).some((k) => k.toLowerCase() === name.toLowerCase())
+		return Object.keys(headersObj).some(k => k.toLowerCase() === name.toLowerCase())
 	},
 	entries(): IterableIterator<[string, string]> {
 		return Object.entries(headersObj)[Symbol.iterator]() as IterableIterator<[string, string]>

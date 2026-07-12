@@ -13,11 +13,7 @@ const DEFAULT_MAX_HKDF_KEY_LENGTH = 1024
 /**
  * Provide Node.js crypto module functions to the sandbox
  */
-export const provideCrypto = (
-	ctx: QuickJSContext | QuickJSAsyncContext,
-	scope: Scope,
-	options: RuntimeOptions,
-) => {
+export const provideCrypto = (ctx: QuickJSContext | QuickJSAsyncContext, scope: Scope, options: RuntimeOptions) => {
 	// Get crypto configuration with defaults
 	const cryptoConfig = options.crypto || {}
 
@@ -41,19 +37,14 @@ export const provideCrypto = (
 	// Wrap crypto functions to handle object serialization across sandbox boundary
 	const cryptoFunctions = {
 		// Hash - returns hex string directly
-		createHashAndDigest: (algorithm: string, data: string | Buffer, outputEncoding: string = 'hex') => {
+		createHashAndDigest: (algorithm: string, data: string | Buffer, outputEncoding = 'hex') => {
 			const hash = crypto.createHash(algorithm)
 			hash.update(data)
 			return hash.digest(outputEncoding as crypto.BinaryToTextEncoding)
 		},
 
 		// HMAC - returns hex string directly
-		createHmacAndDigest: (
-			algorithm: string,
-			key: string | Buffer,
-			data: string | Buffer,
-			outputEncoding: string = 'hex',
-		) => {
+		createHmacAndDigest: (algorithm: string, key: string | Buffer, data: string | Buffer, outputEncoding = 'hex') => {
 			const hmac = crypto.createHmac(algorithm, key)
 			hmac.update(data)
 			return hmac.digest(outputEncoding as crypto.BinaryToTextEncoding)
@@ -109,9 +100,7 @@ export const provideCrypto = (
 			digest: string,
 		) => {
 			if (iterations > maxPbkdf2Iterations) {
-				throw new Error(
-					`CRYPTO_LIMIT_EXCEEDED: pbkdf2 iterations ${iterations} exceeds maximum ${maxPbkdf2Iterations}`,
-				)
+				throw new Error(`CRYPTO_LIMIT_EXCEEDED: pbkdf2 iterations ${iterations} exceeds maximum ${maxPbkdf2Iterations}`)
 			}
 			if (iterations < 1) {
 				throw new Error('CRYPTO_INVALID_ARG: pbkdf2 iterations must be at least 1')
@@ -134,9 +123,7 @@ export const provideCrypto = (
 			digest: string,
 		) => {
 			if (iterations > maxPbkdf2Iterations) {
-				throw new Error(
-					`CRYPTO_LIMIT_EXCEEDED: pbkdf2 iterations ${iterations} exceeds maximum ${maxPbkdf2Iterations}`,
-				)
+				throw new Error(`CRYPTO_LIMIT_EXCEEDED: pbkdf2 iterations ${iterations} exceeds maximum ${maxPbkdf2Iterations}`)
 			}
 			if (iterations < 1) {
 				throw new Error('CRYPTO_INVALID_ARG: pbkdf2 iterations must be at least 1')
@@ -186,13 +173,7 @@ export const provideCrypto = (
 			return key.toString('hex')
 		},
 
-		hkdfSync: (
-			digest: string,
-			key: string | Buffer,
-			salt: string | Buffer,
-			info: string | Buffer,
-			keylen: number,
-		) => {
+		hkdfSync: (digest: string, key: string | Buffer, salt: string | Buffer, info: string | Buffer, keylen: number) => {
 			if (keylen > maxHkdfKeyLength) {
 				throw new Error(`CRYPTO_LIMIT_EXCEEDED: HKDF key length ${keylen} exceeds maximum ${maxHkdfKeyLength}`)
 			}

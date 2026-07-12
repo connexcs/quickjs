@@ -54,6 +54,7 @@ export default await fn('Hello World')</textarea
                 >
             </div>
             <button
+                type="button"
                 id="runButton"
                 class="bg-blue-500 text-white font-semibold text-lg p-4 hover:bg-blue-700"
             >
@@ -123,7 +124,7 @@ export default await fn('Hello World')</textarea
 
             document
                 .getElementById("runButton")
-                .addEventListener("click", async function () {
+                .addEventListener("click", async () => {
                     var code = editor.getValue();
                     var outputElement = document.getElementById("output");
                     var consoleElement = document.getElementById("console");
