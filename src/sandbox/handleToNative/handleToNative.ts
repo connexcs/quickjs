@@ -139,7 +139,7 @@ export const handleToNative = (
 	}
 
 	// biome-ignore lint/complexity/noBannedTypes: ok here
-	const setProperties = (obj: Object | Function, h: QuickJSHandle) => {
+	const setProperties = (obj: Object | Function, h: QuickJSHandle, isFunction = false) => {
 		ctx
 			.newFunction('', (key, value) => {
 				const keyName = handleToNative(ctx, key, rootScope, childState)
@@ -199,9 +199,17 @@ export const handleToNative = (
 					call(
 						ctx,
 						'internal/serializer/setProperties.js',
+						// A function's own 'prototype' (and the legacy 'caller'/'arguments') are
+						// implementation artifacts, not data. Serializing 'prototype' walks the
+						// prototype chain into the guest's global built-ins (Map.prototype,
+						// Date.prototype, …), which report a matching constructor name but aren't
+						// instances — mis-firing every type serializer. Skip them so functions
+						// serialize to just their real, assigned properties. The `isFunction` flag is
+						// baked into the code because it is a static, per-call boolean.
 						`(o, fn) => {
+							const skip = ${isFunction ? "new Set(['prototype', 'caller', 'arguments'])" : 'undefined'};
 							const descs = Object.getOwnPropertyDescriptors(o);
-							Object.entries(descs).forEach(([k, v]) => fn(k, v));
+							Object.entries(descs).forEach(([k, v]) => { if (!skip || !skip.has(k)) fn(k, v); });
 							Object.getOwnPropertySymbols(descs).forEach(k => fn(k, descs[k]));
 						}`,
 						undefined,
@@ -253,7 +261,7 @@ export const handleToNative = (
 			}
 		}
 
-		setProperties(f, handle)
+		setProperties(f, handle, true)
 		return f
 	}
 
@@ -336,18 +344,18 @@ export const handleToNative = (
 				if (ret) {
 					return ret
 				}
-			} catch (error) {
-				// The serializer was chosen by `constructor.name`, which is unreliable: a value
-				// can *report* a matching constructor (e.g. `Date.prototype`, or a function's
-				// `prototype`, or a spoofed `constructor`) without actually being an instance of
-				// that type, making the type-specific guest op throw. For a value-type serializer
-				// that just means "not really this type" — so we swallow the error, drop any
-				// stashed copy, and fall through to generic object serialization below. Container
-				// serializers (Map/Set) are trusted to fail loudly, since falling back would
-				// silently drop their entries.
-				if (isContainer) throw error
+			} catch (_error) {
+				// The serializer is chosen by `constructor.name`, which is unreliable: a value can
+				// *report* a matching constructor (e.g. `Date.prototype`, a function's `prototype`,
+				// a class that `extends Map`, or a spoofed `constructor`) without being an instance
+				// of that type, so the type-specific guest op throws ("Map object expected", "not a
+				// Date object", …). Treat any such failure as "not really this type": drop the
+				// stashed error and fall through to generic object serialization below rather than
+				// failing the whole result. Genuine instances (real Map/Set/Date/…) don't fail
+				// their own extraction, so this only ever rescues mis-dispatched look-alikes.
 				clearSerializeError(ctx)
 			} finally {
+				// The container is off the current path once its walk (success or fallback) is done.
 				if (isContainer) unmarkSeen(handle)
 			}
 		}

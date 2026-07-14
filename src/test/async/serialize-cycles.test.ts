@@ -157,6 +157,69 @@ describe('async - serialize cycles', () => {
 		expect(result.ok).toBeTrue()
 	})
 
+	it('falls back when a non-Map value reports the Map constructor (container mis-dispatch)', async () => {
+		const code = `
+      const o = { hello: 'world' }
+      Object.defineProperty(o, 'constructor', { value: Map, enumerable: false })
+      export default o
+    `
+		const result = await execute(code)
+		expect(result.ok).toBeTrue()
+		expect((result as OkResponse).data).toEqual({ hello: 'world' })
+	})
+
+	it('serializes a function whose prototype derives from Map without error', async () => {
+		const code = `
+      function Wrap() {}
+      Wrap.prototype = Object.create(Map.prototype)
+      export default { w: Wrap }
+    `
+		const result = await execute(code)
+		expect(result.ok).toBeTrue()
+	})
+
+	it('serializes two sibling references to the same real Map (no false circular)', async () => {
+		const code = `
+      const m = new Map([['k', 'v']])
+      export default { a: m, b: m }
+    `
+		const result = await execute(code)
+		expect(result.ok).toBeTrue()
+		const data = (result as OkResponse).data as { a: Map<string, string>; b: Map<string, string> }
+		expect(data.a).toBeInstanceOf(Map)
+		expect(data.b).toBeInstanceOf(Map)
+		expect(data.a.get('k')).toBe('v')
+		expect(data.b.get('k')).toBe('v')
+	})
+
+	it('does not serialize a function prototype (avoids walking into global built-ins)', async () => {
+		const code = `
+      function greet() { return 'hi' }
+      greet.customProp = 42
+      greet.meta = { version: '1.0' }
+      export default greet
+    `
+		const result = await execute(code)
+		expect(result.ok).toBeTrue()
+		const fn = (result as OkResponse).data as any
+		expect(typeof fn).toBe('function')
+		expect(fn.customProp).toBe(42)
+		expect(fn.meta).toEqual({ version: '1.0' })
+	})
+
+	it('serializes a class that extends a built-in without leaking its prototype', async () => {
+		const code = `
+      class Repo extends Map {}
+      Repo.label = 'repo'
+      export default { Repo }
+    `
+		const result = await execute(code)
+		expect(result.ok).toBeTrue()
+		const cls = (result as OkResponse).data as any
+		expect(typeof cls.Repo).toBe('function')
+		expect(cls.Repo.label).toBe('repo')
+	})
+
 	it('never calls the host console.error while serializing a cyclic value', async () => {
 		const consoleErrorSpy = spyOn(console, 'error')
 		try {
