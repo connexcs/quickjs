@@ -137,6 +137,33 @@ describe('sync - serialize cycles', () => {
 		expect(error.message.length).toBeGreaterThan(0)
 	})
 
+	it('falls back to generic serialization when a value only reports a matching constructor', async () => {
+		// `constructor.name` dispatch is unreliable: an object can report a built-in
+		// constructor name (here "Date") without being an instance. The type-specific
+		// serializer must not throw — it should fall back to serializing the plain object.
+		const code = `
+      function FakeDate() {}
+      Object.defineProperty(FakeDate, 'name', { value: 'Date' })
+      const o = { hello: 'world' }
+      Object.defineProperty(o, 'constructor', { value: FakeDate, enumerable: false })
+      export default o
+    `
+		const result = await execute(code)
+		expect(result.ok).toBeTrue()
+		expect((result as OkResponse).data).toEqual({ hello: 'world' })
+	})
+
+	it('serializes a function whose prototype chain pulls in a built-in (extends Date)', async () => {
+		// Serializing a function walks its `prototype`, whose `constructor` is the class /
+		// Date, previously misdispatched to serializeDate and threw "not a Date object".
+		const code = `
+      class MyDate extends Date {}
+      export default { cls: MyDate }
+    `
+		const result = await execute(code)
+		expect(result.ok).toBeTrue()
+	})
+
 	it('never calls the host console.error while serializing a cyclic value', async () => {
 		const consoleErrorSpy = spyOn(console, 'error')
 		try {

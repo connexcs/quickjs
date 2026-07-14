@@ -7,7 +7,7 @@ import {
 } from 'quickjs-emscripten-core'
 import type { SerializeState } from '../../types/SerializeState.js'
 import { getHandle } from '../expose/expose.js'
-import { call, SERIALIZE_ERROR, stashSerializeError } from '../helper.js'
+import { call, clearSerializeError, SERIALIZE_ERROR, stashSerializeError } from '../helper.js'
 import { getSerializer } from './serializer/index.js'
 
 /**
@@ -336,6 +336,17 @@ export const handleToNative = (
 				if (ret) {
 					return ret
 				}
+			} catch (error) {
+				// The serializer was chosen by `constructor.name`, which is unreliable: a value
+				// can *report* a matching constructor (e.g. `Date.prototype`, or a function's
+				// `prototype`, or a spoofed `constructor`) without actually being an instance of
+				// that type, making the type-specific guest op throw. For a value-type serializer
+				// that just means "not really this type" — so we swallow the error, drop any
+				// stashed copy, and fall through to generic object serialization below. Container
+				// serializers (Map/Set) are trusted to fail loudly, since falling back would
+				// silently drop their entries.
+				if (isContainer) throw error
+				clearSerializeError(ctx)
 			} finally {
 				if (isContainer) unmarkSeen(handle)
 			}

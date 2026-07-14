@@ -27,6 +27,16 @@ export const stashSerializeError = (ctx: object, error: unknown) => {
 	;(ctx as any)[PENDING_SERIALIZE_ERROR] = error
 }
 
+/**
+ * Discard any error stashed on the context. Used when a caller deliberately handles a
+ * serialization failure (e.g. a type-specific serializer was dispatched by constructor name
+ * but the value isn't really that type, so we fall back to generic serialization) and does
+ * not want it re-surfaced by a later {@link call}.
+ */
+export const clearSerializeError = (ctx: object) => {
+	delete (ctx as any)[PENDING_SERIALIZE_ERROR]
+}
+
 export const call = (
 	ctx: QuickJSContext | QuickJSAsyncContext,
 	fileName: string,
