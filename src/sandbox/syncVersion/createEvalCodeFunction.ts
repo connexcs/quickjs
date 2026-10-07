@@ -12,14 +12,17 @@ import { provideTimingFunctions } from '../provide/provideTimingFunctions.js'
 export const createEvalCodeFunction = (input: CodeFunctionInput, scope: Scope): SandboxEvalCode => {
 	const { ctx, sandboxOptions, transpileFile, remapStack } = input
 	return async (code, filename = '/src/index.js', evalOptions?) => {
-		const eventLoopinterval = createTimeInterval(() => ctx.runtime.executePendingJobs(), 0)
-
 		let timeoutId: ReturnType<typeof setTimeout> | undefined
 
-		const { dispose: disposeTimer } = provideTimingFunctions(ctx, {
+		const {
+			dispose: disposeTimer,
+			failure: timerFailure,
+			executePendingJobs,
+		} = provideTimingFunctions(ctx, {
 			maxTimeoutCount: getMaxTimeoutAmount(sandboxOptions),
 			maxIntervalCount: getMaxIntervalAmount(sandboxOptions),
 		})
+		const eventLoopinterval = createTimeInterval(executePendingJobs, 0)
 
 		const disposeStep = () => {
 			if (timeoutId) {
@@ -43,6 +46,9 @@ export const createEvalCodeFunction = (input: CodeFunctionInput, scope: Scope): 
 
 			const native = handleToNative(ctx, handle, scope)
 			const result = await Promise.race([
+				timerFailure.then(error => {
+					throw error
+				}),
 				(async () => {
 					const res = await native
 					return res.default

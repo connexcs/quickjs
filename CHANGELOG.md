@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.13] - Unreleased
+
+### Timer behavior changes
+
+- Timer callback throws and returned promise rejections now fail an active evaluation with `ok: false`; previously they were ignored. Only the first failure is returned. Errors after evaluation teardown do not change an already returned result. Catch expected background errors inside the callback to keep evaluation running.
+- Pending-job errors observed by the evaluator's event loop also fail the evaluation, with their owned results disposed.
+- Missing or non-function callbacks throw a descriptive `TypeError`.
+- `setImmediate` uses its own concurrent limit based on `maxTimeoutCount`, independently of pending timeouts.
+- Clear functions accept IDs from any timer kind. Timeout, interval, and immediate callbacks receive their extra arguments.
+
+### Example: background timer errors now fail evaluation
+
+A timer error now stops an evaluation that is still waiting for its result:
+
+```ts
+import variant from '@jitl/quickjs-ng-wasmfile-release-sync'
+import { loadQuickJs } from '@connexcs/quickjs'
+
+const { runSandboxed } = await loadQuickJs(variant)
+const result = await runSandboxed(({ evalCode }) => evalCode(`
+  setTimeout(() => { throw new Error('bg') }, 1)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  export default 'done'
+`))
+
+// Before 3.0.13: result.ok === true; result.data === 'done'
+// From 3.0.13:   result.ok === false; result.error.message === 'bg'
+```
+
+The same applies when an async timer callback returns a rejected promise. To allow an expected background failure without failing evaluation, catch it inside the callback, including errors from awaited operations:
+
+```ts
+const result = await runSandboxed(({ evalCode }) => evalCode(`
+  setTimeout(async () => {
+    try {
+      await Promise.reject(new Error('bg'))
+    } catch (error) {
+      // Handle the expected failure here, e.g. record it or schedule a retry.
+    }
+  }, 1)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  export default 'done'
+`))
+
+// result.ok === true; result.data === 'done'
+```
+
+Only the first failure is returned. Timers are cancelled when evaluation ends; a rejection arriving after teardown cannot change a result already returned. These examples also apply to `setImmediate` and `setInterval`, and to the async QuickJS loader.
+
+### Memory fixes
+
+- Release timer callbacks and arguments on completion, cancellation, or teardown, including self-cancellation. Dispose successful and failed callback results.
+
 ## [unreleased]
 
 ### 📚 Documentation

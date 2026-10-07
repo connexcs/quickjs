@@ -1,4 +1,13 @@
-import { type QuickJSAsyncContext, type QuickJSContext, Scope } from 'quickjs-emscripten-core'
+import { type QuickJSAsyncContext, type QuickJSContext, type QuickJSHandle, Scope } from 'quickjs-emscripten-core'
+
+type Timer = {
+	id: ReturnType<typeof setTimeout>
+	callback: QuickJSHandle
+	args: QuickJSHandle[]
+	ownership: Scope
+	active: boolean
+	running: boolean
+}
 
 export const provideTimingFunctions = (
 	ctx: QuickJSContext | QuickJSAsyncContext,
@@ -8,159 +17,151 @@ export const provideTimingFunctions = (
 	},
 ) => {
 	const scope = new Scope()
-
-	const timeouts = new Map<number, ReturnType<typeof setTimeout>>()
-	let timeoutCounter = 0
-
-	const immediates = new Map<number, ReturnType<typeof setTimeout>>()
-	let immediateCounter = 0
-
-	const intervals = new Map<number, ReturnType<typeof setTimeout>>()
-	let intervalCounter = 0
-
-	const _setTimeout = ctx.newFunction('setTimeout', (vmFnHandle, timeoutHandle) => {
-		const currentCounter = timeoutCounter++
-		if (timeouts.size + 1 > max.maxTimeoutCount) {
-			throw new Error(
-				`Client tries to use setTimeout, which exceeds the limit of max ${max.maxTimeoutCount} concurrent running timeout functions`,
-			)
+	const timeouts = new Map<number, Timer>()
+	const immediates = new Map<number, Timer>()
+	const intervals = new Map<number, Timer>()
+	let counter = 0
+	let disposed = false
+	let reportFailure!: (error: Error) => void
+	// Resolves with the first callback failure. Ignoring it at the provider level does
+	// not create an unhandled host rejection; evaluators race it against their result.
+	const failure = new Promise<Error>(resolve => {
+		reportFailure = resolve
+	})
+	const report = (value: unknown) => {
+		if (disposed || !ctx.alive) return
+		if (value instanceof Error) {
+			reportFailure(value)
+			return
 		}
-
-		const vmFnHandleCopy = vmFnHandle.dup()
-		scope.manage(vmFnHandleCopy)
-		const timeout = timeoutHandle ? ctx.dump(timeoutHandle) : undefined
-
-		const timeoutID = setTimeout(() => {
-			const t = timeouts.get(currentCounter)
-			if (t) {
-				clearTimeout(t)
-				timeouts.delete(currentCounter)
+		const details =
+			value && typeof value === 'object' ? (value as { message?: unknown; name?: unknown; stack?: unknown }) : undefined
+		const error = new Error(details?.message !== undefined ? String(details.message) : String(value))
+		if (typeof details?.name === 'string') error.name = details.name
+		if (typeof details?.stack === 'string') error.stack = details.stack
+		reportFailure(error)
+	}
+	const reporter = scope.manage(
+		ctx.newFunction('timerFailure', value => {
+			if (!disposed && ctx.alive) report(ctx.dump(value))
+		}),
+	)
+	const watch = scope.manage(
+		ctx.unwrapResult(
+			ctx.evalCode(`(value, report) => {
+				if (value && typeof value.then === 'function') Promise.resolve(value).then(undefined, report)
+			}`),
+		),
+	)
+	const release = (timer: Timer) => {
+		if (!timer.running && timer.ownership.alive) timer.ownership.dispose()
+	}
+	const cancel = (timers: Map<number, Timer>, id: number) => {
+		const timer = timers.get(id)
+		if (!timer) return
+		timers.delete(id)
+		timer.active = false
+		clearTimeout(timer.id)
+		clearInterval(timer.id)
+		release(timer)
+	}
+	const invoke = (timers: Map<number, Timer>, id: number, repeat: boolean) => {
+		const timer = timers.get(id)
+		if (!timer?.active || disposed || !ctx.alive) return
+		if (!repeat) {
+			timers.delete(id)
+			timer.active = false
+		}
+		timer.running = true
+		try {
+			const result = ctx.callFunction(timer.callback, ctx.undefined, ...timer.args)
+			try {
+				if (result.error) report(ctx.dump(result.error))
+				else if (!disposed && ctx.alive) {
+					const observed = ctx.callFunction(watch, ctx.undefined, result.value, reporter)
+					try {
+						if (observed.error) report(ctx.dump(observed.error))
+					} finally {
+						observed.dispose()
+					}
+				}
+			} finally {
+				result.dispose()
 			}
-			ctx.callFunction(vmFnHandleCopy, ctx.undefined)
-		}, timeout)
-
-		timeouts.set(currentCounter, timeoutID)
-
-		return ctx.newNumber(currentCounter)
-	})
-
-	scope.manage(_setTimeout)
-	ctx.setProp(ctx.global, 'setTimeout', _setTimeout)
-
-	const _clearTimeout = ctx.newFunction('clearTimeout', timeoutHandle => {
-		const id: number = ctx.dump(timeoutHandle)
-		timeoutHandle.dispose()
-
-		const t = timeouts.get(id)
-		if (t) {
-			clearTimeout(t)
-			timeouts.delete(id)
+		} catch (error) {
+			report(error)
+		} finally {
+			timer.running = false
+			if (!timer.active) release(timer)
 		}
-	})
-
-	scope.manage(_clearTimeout)
-	ctx.setProp(ctx.global, 'clearTimeout', _clearTimeout)
-
-	const _setImmediate = ctx.newFunction('setImmediate', vmFnHandle => {
-		const currentCounter = immediateCounter++
-		if (timeouts.size + 1 > max.maxTimeoutCount) {
-			throw new Error(
-				`Client tries to use setImmediate, which exceeds the limit of max ${max.maxTimeoutCount} concurrent running timeout functions`,
-			)
-		}
-
-		const vmFnHandleCopy = vmFnHandle.dup()
-		scope.manage(vmFnHandleCopy)
-
-		const timeoutID = setTimeout(() => {
-			const t = immediates.get(currentCounter)
-			if (t) {
-				clearTimeout(t)
-				immediates.delete(currentCounter)
-			}
-			ctx.callFunction(vmFnHandleCopy, ctx.undefined)
-		}, 0)
-
-		immediates.set(currentCounter, timeoutID)
-
-		return ctx.newNumber(currentCounter)
-	})
-
-	scope.manage(_setImmediate)
-	ctx.setProp(ctx.global, 'setImmediate', _setImmediate)
-
-	const _clearImmediate = ctx.newFunction('clearImmediate', idHandle => {
-		const id: number = ctx.dump(idHandle)
-		idHandle.dispose()
-
-		const t = immediates.get(id)
-		if (t) {
-			clearTimeout(t)
-			immediates.delete(id)
-		}
-	})
-
-	scope.manage(_clearImmediate)
-	ctx.setProp(ctx.global, 'clearImmediate', _clearImmediate)
-
-	const _setInterval = ctx.newFunction('setInterval', (vmFnHandle, intervalHandle) => {
-		const currentCounter = intervalCounter++
-		if (intervals.size + 1 > max.maxIntervalCount) {
-			throw new Error(
-				`Client tries to use setInterval, which exceeds the limit of max ${max.maxIntervalCount} concurrent running interval functions`,
-			)
-		}
-		const vmFnHandleCopy = vmFnHandle.dup()
-		scope.manage(vmFnHandleCopy)
-		const interval = ctx.dump(intervalHandle)
-
-		const intervalID = setInterval(() => {
-			ctx.callFunction(vmFnHandleCopy, ctx.undefined)
-		}, interval)
-
-		intervals.set(currentCounter, intervalID)
-
-		return ctx.newNumber(currentCounter)
-	})
-
-	scope.manage(_setInterval)
-	ctx.setProp(ctx.global, 'setInterval', _setInterval)
-
-	const _clearInterval = ctx.newFunction('clearInterval', intervalHandle => {
-		const id: number = ctx.dump(intervalHandle)
-		intervalHandle.dispose()
-
-		const t = intervals.get(id)
-		if (t) {
-			clearInterval(t)
-			intervals.delete(id)
-		}
-	})
-
-	scope.manage(_clearInterval)
-	ctx.setProp(ctx.global, 'clearInterval', _clearInterval)
+	}
+	const register = (name: string, timers: Map<number, Timer>, repeat = false) => {
+		const set = scope.manage(
+			ctx.newFunction(name, (callback, delay, ...extraArgs) => {
+				if (disposed) throw new Error('Timer provider has been disposed')
+				const limit = repeat ? max.maxIntervalCount : max.maxTimeoutCount
+				if (timers.size >= limit) {
+					throw new Error(
+						`Client tries to use ${name}, which exceeds the limit of max ${limit} concurrent running timer functions`,
+					)
+				}
+				if (!callback || ctx.typeof(callback) !== 'function') throw new TypeError(`${name} callback must be a function`)
+				const timeout = name === 'setImmediate' ? 0 : delay ? ctx.dump(delay) : undefined
+				const ownership = new Scope()
+				const id = counter++
+				try {
+					const copy = ownership.manage(callback.dup())
+					const params = name === 'setImmediate' ? (delay ? [delay, ...extraArgs] : []) : extraArgs
+					const args = params.map(arg => ownership.manage(arg.dup()))
+					const hostId = repeat
+						? setInterval(() => invoke(timers, id, true), timeout)
+						: setTimeout(() => invoke(timers, id, false), timeout)
+					timers.set(id, { id: hostId, callback: copy, args, ownership, active: true, running: false })
+					return ctx.newNumber(id)
+				} catch (error) {
+					cancel(timers, id)
+					if (ownership.alive) ownership.dispose()
+					throw error
+				}
+			}),
+		)
+		ctx.setProp(ctx.global, name, set)
+		const clearName = name.replace('set', 'clear')
+		const clear = scope.manage(
+			ctx.newFunction(clearName, handle => {
+				if (!handle) return
+				const id = ctx.dump(handle)
+				for (const map of [timeouts, immediates, intervals]) cancel(map, id)
+			}),
+		)
+		ctx.setProp(ctx.global, clearName, clear)
+	}
+	register('setTimeout', timeouts)
+	register('setImmediate', immediates)
+	register('setInterval', intervals, true)
 
 	const dispose = () => {
-		for (const [_key, value] of timeouts) {
-			clearTimeout(value)
+		if (disposed) return
+		disposed = true
+		for (const timers of [timeouts, immediates, intervals]) {
+			for (const id of timers.keys()) cancel(timers, id)
 		}
-		timeouts.clear()
-		timeoutCounter = 0
-
-		for (const [_key, value] of immediates) {
-			clearTimeout(value)
-		}
-		immediates.clear()
-		immediateCounter = 0
-
-		for (const [_key, value] of intervals) {
-			clearInterval(value)
-		}
-		intervals.clear()
-		intervalCounter = 0
-
 		scope.dispose()
 	}
 
-	return { dispose }
+	const executePendingJobs = () => {
+		if (disposed || !ctx.alive) return
+		try {
+			const result = ctx.runtime.executePendingJobs()
+			try {
+				if (result.error) report(result.error.context.dump(result.error))
+			} finally {
+				result.dispose()
+			}
+		} catch (error) {
+			report(error)
+		}
+	}
+
+	return { dispose, failure, executePendingJobs }
 }

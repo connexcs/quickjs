@@ -77,7 +77,11 @@ console: {
 
 ### ⏲️ Timer Limits
 
-To prevent abuse, the number of running `setTimeout` and `setInterval` calls is restricted.
+To prevent abuse, the number of running `setTimeout` and `setInterval` calls is restricted. `setImmediate` has its own concurrent limit using `maxTimeoutCount`.
+
+Timer callbacks are released when they finish or are cancelled. An interval retains its callback until cancellation or evaluation teardown. Callbacks receive extra arguments passed to `setTimeout`, `setInterval`, or `setImmediate`. Clear functions accept an ID from any timer kind.
+
+Starting in 3.0.13, if a callback throws or returns a rejected promise while evaluation is active, `evalCode` returns an error result (`ok: false`) and clears the remaining timers. Pending timers are cancelled when evaluation ends; callback rejections arriving after teardown are ignored and cannot change the result already returned. Only the first failure is returned. Catch expected background errors inside the callback if evaluation should continue. Errors observed while executing pending guest jobs also fail the evaluation.
 
 | Option             | Type     | Description                               |
 | ------------------ | -------- | ----------------------------------------- |
