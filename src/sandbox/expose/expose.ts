@@ -95,12 +95,17 @@ export const getHandle = (
 				? getHandle(scope, ctx, '', prototype)
 				: undefined
 
-		const handle = Array.isArray(input) ? ctx.newArray() : ctx.newObject(prototypeHandle)
-
-		setProperties(ctx, scope, input, handle)
-
-		prototypeHandle?.dispose()
-		return handle
+		let handle: QuickJSHandle | undefined
+		try {
+			handle = Array.isArray(input) ? ctx.newArray() : ctx.newObject(prototypeHandle)
+			setProperties(ctx, scope, input, handle)
+			return handle
+		} catch (error) {
+			if (handle?.alive) handle.dispose()
+			throw error
+		} finally {
+			prototypeHandle?.dispose()
+		}
 	}
 
 	throw new Error(`unsupported data type in ${name} ${typeof input}`)
@@ -113,45 +118,46 @@ const setProperties = (
 	input: object | Function,
 	parent: QuickJSHandle,
 ) => {
-	const descs = ctx.newObject()
-
-	const setEntry = (key: string | number | symbol, desc: PropertyDescriptor) => {
-		const keyHandle = getHandle(scope, ctx, '', key)
-		const valueHandle = typeof desc.value === 'undefined' ? undefined : getHandle(scope, ctx, '', desc.value)
-		const getterHandle = typeof desc.get === 'undefined' ? undefined : getHandle(scope, ctx, '', desc.get)
-		const setterHandle = typeof desc.set === 'undefined' ? undefined : getHandle(scope, ctx, '', desc.set)
-
-		const descObj = ctx.newObject()
-		for (const [k, v] of Object.entries(desc)) {
-			const v2 =
-				k === 'value' ? valueHandle : k === 'get' ? getterHandle : k === 'set' ? setterHandle : v ? ctx.true : ctx.false
-			if (v2) {
-				ctx.setProp(descObj, k, v2)
+	const temporary = new Scope()
+	const descs = temporary.manage(ctx.newObject())
+	try {
+		const setEntry = (key: string | number | symbol, desc: PropertyDescriptor) => {
+			const entry = new Scope()
+			try {
+				const keyHandle = entry.manage(getHandle(scope, ctx, '', key))
+				const valueHandle =
+					typeof desc.value === 'undefined' ? undefined : entry.manage(getHandle(scope, ctx, '', desc.value))
+				const getterHandle =
+					typeof desc.get === 'undefined' ? undefined : entry.manage(getHandle(scope, ctx, '', desc.get))
+				const setterHandle =
+					typeof desc.set === 'undefined' ? undefined : entry.manage(getHandle(scope, ctx, '', desc.set))
+				const descObj = entry.manage(ctx.newObject())
+				for (const [k, v] of Object.entries(desc)) {
+					const v2 =
+						k === 'value'
+							? valueHandle
+							: k === 'get'
+								? getterHandle
+								: k === 'set'
+									? setterHandle
+									: v
+										? ctx.true
+										: ctx.false
+					if (v2) ctx.setProp(descObj, k, v2)
+				}
+				ctx.setProp(descs, keyHandle, descObj)
+			} finally {
+				entry.dispose()
 			}
 		}
-
-		ctx.setProp(descs, keyHandle, descObj)
-
-		keyHandle.dispose()
-		valueHandle?.dispose()
-		getterHandle?.dispose()
-		setterHandle?.dispose()
-		descObj.dispose()
+		const desc = Object.getOwnPropertyDescriptors(input)
+		for (const [k, v] of Object.entries(desc)) setEntry(k, v)
+		for (const k of Object.getOwnPropertySymbols(desc)) setEntry(k, (desc as any)[k])
+		const fnHandle = temporary.manage(ctx.unwrapResult(ctx.evalCode('Object.defineProperties')))
+		temporary.manage(ctx.unwrapResult(ctx.callFunction(fnHandle, ctx.undefined, parent, descs)))
+	} finally {
+		temporary.dispose()
 	}
-
-	const desc = Object.getOwnPropertyDescriptors(input)
-	for (const [k, v] of Object.entries(desc)) {
-		setEntry(k, v)
-	}
-	for (const k of Object.getOwnPropertySymbols(desc)) {
-		setEntry(k, (desc as any)[k])
-	}
-
-	const fnHandle = ctx.unwrapResult(ctx.evalCode('Object.defineProperties'))
-	const callHandle = ctx.unwrapResult(ctx.callFunction(fnHandle, ctx.undefined, parent, descs))
-	callHandle.dispose()
-	fnHandle.dispose()
-	descs.dispose()
 }
 
 const addProp = (
