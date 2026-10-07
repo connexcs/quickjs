@@ -1,6 +1,7 @@
 import { type QuickJSAsyncContext, type QuickJSContext, type QuickJSHandle, Scope } from 'quickjs-emscripten-core'
 import { HEADERS_MARKER } from '../../adapter/fetch.js'
 import { handleToNative } from '../handleToNative/handleToNative.js'
+import { hostPromiseHandle } from './hostPromises.js'
 import { isES2015Class } from './isES2015Class.js'
 import { isObject } from './isObject.js'
 
@@ -34,22 +35,7 @@ export const getHandle = (
 	}
 	// Promise
 	if (input instanceof Promise) {
-		const promise = ctx.newPromise()
-		promise.settled.then(ctx.runtime.executePendingJobs)
-		input.then(
-			r => {
-				const handle = getHandle(scope, ctx, '', r)
-				promise.resolve(handle)
-				handle.dispose()
-			},
-			e => {
-				const handle = getHandle(scope, ctx, '', e)
-				promise.reject(handle)
-				handle.dispose()
-			},
-		)
-
-		return promise.handle
+		return hostPromiseHandle(ctx, input, (lifetime, value) => getHandle(lifetime, ctx, '', value))
 	}
 
 	switch (typeof input) {

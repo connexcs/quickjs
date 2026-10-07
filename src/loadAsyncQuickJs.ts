@@ -5,6 +5,7 @@ import { getAsyncModuleLoader } from './sandbox/asyncVersion/getAsyncModuleLoade
 import { modulePathNormalizerAsync } from './sandbox/asyncVersion/modulePathNormalizerAsync.js'
 import { prepareAsyncNodeCompatibility } from './sandbox/asyncVersion/prepareAsyncNodeCompatibility.js'
 import { prepareAsyncSandbox } from './sandbox/asyncVersion/prepareAsyncSandbox.js'
+import { disposeHostPromises } from './sandbox/expose/hostPromises.js'
 import { setupFileSystem } from './sandbox/setupFileSystem.js'
 import type { LoadAsyncQuickJsOptions } from './types/LoadQuickJsOptions.js'
 
@@ -128,6 +129,7 @@ export const loadAsyncQuickJs = async (variant: LoadAsyncQuickJsOptions) => {
 				// Detach the module loader (its native trampoline is per-runtime and this loader closes
 				// over this call's `fs`).
 				runtime.removeModuleLoader()
+				disposeHostPromises(ctx)
 				scope.dispose()
 			}
 		}

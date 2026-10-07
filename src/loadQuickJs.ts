@@ -1,5 +1,6 @@
 import { newQuickJSWASMModuleFromVariant, Scope, shouldInterruptAfterDeadline } from 'quickjs-emscripten-core'
 import { getTypescriptSupport } from './getTypescriptSupport.js'
+import { disposeHostPromises } from './sandbox/expose/hostPromises.js'
 import { setupFileSystem } from './sandbox/setupFileSystem.js'
 import { executeSandboxFunction } from './sandbox/syncVersion/executeSandboxFunction.js'
 import { getModuleLoader } from './sandbox/syncVersion/getModuleLoader.js'
@@ -108,6 +109,7 @@ export const loadQuickJs = async (variant: LoadQuickJsOptions) => {
 				}
 				// Detach the module loader (per-runtime, closes over this call's `fs`).
 				runtime.removeModuleLoader()
+				disposeHostPromises(ctx)
 				scope.dispose()
 			}
 		}
