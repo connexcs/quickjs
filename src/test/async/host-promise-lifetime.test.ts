@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
 import ng from '@jitl/quickjs-ng-wasmfile-release-asyncify'
 import sync from '@jitl/quickjs-ng-wasmfile-release-sync'
 import legacy from '@jitl/quickjs-wasmfile-release-asyncify'
-import { DisposableResult, type QuickJSDeferredPromise } from 'quickjs-emscripten-core'
+import { DisposableResult, type QuickJSDeferredPromise, Scope } from 'quickjs-emscripten-core'
 import { loadAsyncQuickJs } from '../../loadAsyncQuickJs.js'
 import { loadQuickJs } from '../../loadQuickJs.js'
+import { getHandle } from '../../sandbox/expose/expose.js'
 
 function deferred<T>() {
 	let resolve!: (value: T) => void
@@ -195,6 +196,57 @@ for (const variant of [
 				},
 			)
 			expect(result).toMatchObject({ ok: true, data: [123, 456, true, true] })
+		})
+		for (const reject of [false, true]) {
+			it(`preserves caller ownership across awaited ${reject ? 'rejection' : 'resolution'}`, async () => {
+				const { runSandboxed } = await variant.load()
+				await runSandboxed(async ({ ctx }) => {
+					const scope = new Scope()
+					const input = deferred<unknown>()
+					const handle = getHandle(scope, ctx, '', input.promise)
+					try {
+						if (reject) input.reject('rejected')
+						else input.resolve(123)
+						await Bun.sleep(10)
+						expect(handle.alive).toBe(true)
+						expect(() => handle.dispose()).not.toThrow()
+					} finally {
+						if (handle.alive) handle.dispose()
+						scope.dispose()
+					}
+				})
+			})
+		}
+
+		it('contains an engine exception thrown by the queued settlement kick', async () => {
+			const { runSandboxed } = await variant.load()
+			await runSandboxed(async ({ ctx }) => {
+				const callbacks: (() => void)[] = []
+				const queued = spyOn(globalThis, 'queueMicrotask').mockImplementation(fn => {
+					callbacks.push(fn)
+				})
+				const original = ctx.runtime.executePendingJobs
+				const scope = new Scope()
+				const input = deferred<unknown>()
+				const handle = getHandle(scope, ctx, '', input.promise)
+				try {
+					input.resolve(123)
+					await Promise.resolve()
+					expect(callbacks.length).toBeGreaterThan(0)
+					let attempted = false
+					ctx.runtime.executePendingJobs = () => {
+						attempted = true
+						throw new Error('engine job failure')
+					}
+					for (const callback of callbacks) expect(callback).not.toThrow()
+					expect(attempted).toBe(true)
+				} finally {
+					queued.mockRestore()
+					ctx.runtime.executePendingJobs = original
+					if (handle.alive) handle.dispose()
+					scope.dispose()
+				}
+			})
 		})
 	})
 }

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [3.0.13] - Unreleased
 
+### Host promise bridge
+
+- Returned promise handles remain caller-owned after resolve or reject; bridge cleanup releases its own independent handle and resolvers. Callers must dispose their handles before context teardown.
+- Exceptions from the bridge's best-effort pending-job microtask no longer escape into the host process. Active evaluators continue polling jobs and report observed failures.
+- When host-to-guest conversion fails, the fallback rejection forwards the error name and message, but does not copy its host stack. This limitation concerns conversion-failure fallbacks, not ordinary host promise rejections.
+
 ### Timer behavior changes
 
 - Timer callback throws and returned promise rejections now fail an active evaluation with `ok: false`; previously they were ignored. Only the first failure is returned. Errors after evaluation teardown do not change an already returned result. Catch expected background errors inside the callback to keep evaluation running.

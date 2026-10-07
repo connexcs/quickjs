@@ -16,7 +16,11 @@ export function disposeHostPromises(ctx: Context): void {
 	if (entries) for (const cancel of [...entries]) cancel()
 }
 
-/** The argument-conversion Scope is short-lived; async values need context-lifetime ownership. */
+/**
+ * The argument-conversion Scope is short-lived; async values need context-lifetime ownership.
+ * Returns a caller-owned duplicate, independent of the bridge's deferred handle.
+ * The caller must dispose it (or manage it in a Scope) before disposing the context.
+ */
 export function hostPromiseHandle(
 	ctx: Context,
 	input: Promise<unknown>,
@@ -58,6 +62,7 @@ export function hostPromiseHandle(
 			else deferred.resolve(handle)
 		} catch (error) {
 			// Conversion failures belong to the guest promise, not an unobserved input.then chain.
+			// Forward name/message only; the fallback uses a guest stack, not the host stack.
 			if (context.alive && deferred.alive) {
 				const fallback = context.newError(
 					error instanceof Error
@@ -78,7 +83,13 @@ export function hostPromiseHandle(
 		// Match the existing bridge's microtask kick, without accessing a retired context
 		// or retaining a caller-owned pending-job error result.
 		queueMicrotask(() => {
-			if (context.alive) context.runtime.executePendingJobs().dispose()
+			if (!context.alive) return
+			try {
+				context.runtime.executePendingJobs().dispose()
+			} catch {
+				// This is a best-effort kick. A thrown engine error must not escape the
+				// host microtask; active evaluators also poll jobs and report failures.
+			}
 		})
 	}
 	// The callbacks guard lifetime *before* conversion. A retired context drops results,
@@ -87,5 +98,5 @@ export function hostPromiseHandle(
 		value => settle(false, value),
 		error => settle(true, error),
 	)
-	return promise.handle
+	return promise.handle.dup()
 }
