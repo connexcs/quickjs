@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [3.0.13] - Unreleased
 
+### QuickJS compatibility
+
+- Retain the 0.31.x core/FFI/WASM stack. The proposed 0.32.0 upgrade is deferred pending compatibility and failure-recovery validation; callback overflow remains a known limitation.
+- Optional WASM peer dependencies require 0.31.x. Loaders validate a host-function round trip before `evalCode` executes guest code, so incompatible variants fail clearly instead of silently returning undefined.
+- See [the upgrade assessment](website/docs/quickjs-upgrade-assessment.md) for reproduced failures, upstream fixes, test limitations, and the future upgrade checklist.
+
 ### Host promise bridge
 
 - Returned promise handles remain caller-owned after resolve or reject; bridge cleanup releases its own independent handle and resolvers. Callers must dispose their handles before context teardown.
@@ -58,6 +64,8 @@ const result = await runSandboxed(({ evalCode }) => evalCode(`
 Only the first failure is returned. Timers are cancelled when evaluation ends; a rejection arriving after teardown cannot change a result already returned. These examples also apply to `setImmediate` and `setInterval`, and to the async QuickJS loader.
 
 ### Memory fixes
+
+- Release owned fulfilled/rejected promise-state snapshot handles during serialization, and release resolved value/error handles even if conversion throws. This leak also affected 0.31.0. After this fix, both 0.32.0 Asyncify variants retained a 16 MiB WASM heap with constant sampled live engine memory across 2,000 shared-runtime evaluations each.
 
 - Release timer callbacks and arguments on completion, cancellation, or teardown, including self-cancellation. Dispose successful and failed callback results.
 

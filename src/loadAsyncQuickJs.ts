@@ -1,4 +1,5 @@
 import { newQuickJSAsyncWASMModuleFromVariant, Scope, shouldInterruptAfterDeadline } from 'quickjs-emscripten-core'
+import { assertWasmCompatibility } from './assertWasmCompatibility.js'
 import { getTypescriptSupport } from './getTypescriptSupport.js'
 import { executeAsyncSandboxFunction } from './sandbox/asyncVersion/executeAsyncSandboxFunction.js'
 import { getAsyncModuleLoader } from './sandbox/asyncVersion/getAsyncModuleLoader.js'
@@ -19,6 +20,8 @@ import type { SandboxAsyncOptions } from './types/SandboxOptions.js'
  */
 export const loadAsyncQuickJs = async (variant: LoadAsyncQuickJsOptions) => {
 	const module = await newQuickJSAsyncWASMModuleFromVariant(variant)
+
+	assertWasmCompatibility(module)
 
 	// One long-lived runtime is shared across every `runSandboxed` call; each call gets a fresh,
 	// fully-isolated context (its own `globalThis`/realm) that is disposed at the end of the call.

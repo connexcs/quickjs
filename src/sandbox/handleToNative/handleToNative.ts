@@ -69,15 +69,17 @@ export const handleToNative = (
 	const asPromiseState: JSPromiseState & { notAPromise?: boolean } = ctx.getPromiseState(handle)
 
 	if (asPromiseState.type && !asPromiseState.notAPromise) {
+		// A settled snapshot owns its value/error handle. The non-promise branch
+		// borrows the input handle instead, so only dispose real snapshots.
+		if (asPromiseState.type === 'fulfilled') asPromiseState.value.dispose()
+		if (asPromiseState.type === 'rejected') asPromiseState.error.dispose()
 		return ctx.resolvePromise(handle).then(val => {
-			if (val.error) {
-				const error = handleToNative(ctx, val.error, rootScope, state)
-				val.error.dispose()
-				return Promise.reject(error)
+			try {
+				if (val.error) throw handleToNative(ctx, val.error, rootScope, state)
+				return handleToNative(ctx, val.value, rootScope, state)
+			} finally {
+				val.dispose()
 			}
-			const value = handleToNative(ctx, val.value, rootScope, state)
-			val.value.dispose()
-			return Promise.resolve(value)
 		})
 	}
 

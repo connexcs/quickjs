@@ -21,8 +21,8 @@ for (const mode of ['sync', 'async'] as const) {
 			const module = await (mode === 'sync'
 				? newQuickJSWASMModuleFromVariant(syncVariant)
 				: newQuickJSAsyncWASMModuleFromVariant(asyncVariant))
-			const runtime = module.newRuntime()
-			const ctx = runtime.newContext()
+			// Context-owned teardown avoids upstream Asyncify #261; loader suites cover shared newRuntime().
+			const ctx = module.newContext()
 			const observed: QuickJSHandle[] = []
 			let failureHandle: QuickJSHandle | undefined
 			const getProp = ctx.getProp
@@ -102,7 +102,6 @@ for (const mode of ['sync', 'async'] as const) {
 				stringSpy.mockRestore()
 				ctx.getProp = getProp
 				ctx.dispose()
-				runtime.dispose()
 			}
 		})
 	})

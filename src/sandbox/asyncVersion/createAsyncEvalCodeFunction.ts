@@ -1,4 +1,5 @@
 import type { Scope } from 'quickjs-emscripten-core'
+import { assertHostCallbackCompatibility } from '../../assertWasmCompatibility.js'
 import { createTimeInterval } from '../../createTimeInterval.js'
 import type { CodeFunctionAsyncInput } from '../../types/CodeFunctionInput.js'
 import type { OkResponse } from '../../types/OkResponse.js'
@@ -12,6 +13,7 @@ import { provideTimingFunctions } from '../provide/provideTimingFunctions.js'
 export const createAsyncEvalCodeFunction = (input: CodeFunctionAsyncInput, scope: Scope): SandboxEvalCode => {
 	const { ctx, sandboxOptions, transpileFile, remapStack } = input
 	return async (code, filename = '/src/index.js', evalOptions?) => {
+		assertHostCallbackCompatibility(ctx)
 		let timeoutId: ReturnType<typeof setTimeout> | undefined
 
 		const {

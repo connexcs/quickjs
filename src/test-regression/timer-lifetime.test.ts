@@ -36,13 +36,15 @@ async function withTimers(
 	max = { maxTimeoutCount: 100, maxIntervalCount: 100 },
 ) {
 	const module = await variant.create()
-	const runtime = module.newRuntime()
-	const ctx = runtime.newContext()
+	// Context-owned teardown avoids upstream Asyncify #261; loader suites cover shared newRuntime().
+	const ctx = module.newContext()
 	const copies: QuickJSHandle[] = []
 	const argumentCopies: QuickJSHandle[] = []
 	const results: ReturnType<typeof ctx.callFunction>[] = []
 	const newFunction = ctx.newFunction
-	ctx.newFunction = function (name, fn) {
+	ctx.newFunction = function (...params: unknown[]) {
+		const name = typeof params[0] === 'string' ? params[0] : ''
+		const fn = (params.length === 1 ? params[0] : params[1]) as Parameters<QuickJSContext['newFunction']>[1]
 		return newFunction.call(this, name, function (...args) {
 			if (
 				['setTimeout', 'setInterval', 'setImmediate'].includes(name) &&
@@ -78,7 +80,6 @@ async function withTimers(
 		for (const result of results) if (result.alive) result.dispose()
 		timers.dispose()
 		ctx.dispose()
-		runtime.dispose()
 	}
 }
 

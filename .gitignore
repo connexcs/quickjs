@@ -136,3 +136,7 @@ src/modules/build
 
 website/.vitepress/cache
 docs
+# Keep the manually maintained upgrade assessment alongside the tracked docs.
+!website/docs/
+website/docs/*
+!website/docs/quickjs-upgrade-assessment.md

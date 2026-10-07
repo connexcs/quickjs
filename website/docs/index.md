@@ -30,22 +30,22 @@ This package is also available at [jsr.io/@sebastianwessel/quickjs](https://jsr.
 
 ### QuickJS Wasm Variant
 
-This library does not include the QuickJS wasm file. It must be installed separat.
+This library does not include the QuickJS WASM file. Install a variant from the same 0.x release series as `quickjs-emscripten-core`: this release uses **0.31.x**, not 0.32.x. Caret ranges such as `^0.31.0` do not upgrade to 0.32.0. See the [upgrade assessment](./quickjs-upgrade-assessment.md) for compatibility constraints.
 
 The most straight forward variant is `@jitl/quickjs-ng-wasmfile-release-sync`
 
 ::: code-group
 
 ```sh [npm]
-npm install @jitl/quickjs-ng-wasmfile-release-sync
+npm install @jitl/quickjs-ng-wasmfile-release-sync@~0.31.0
 ```
 
 ```sh [bun]
-bun add @jitl/quickjs-ng-wasmfile-release-sync
+bun add @jitl/quickjs-ng-wasmfile-release-sync@~0.31.0
 ```
 
 ```sh [yarn]
-yarn add @jitl/quickjs-ng-wasmfile-release-sync
+yarn add @jitl/quickjs-ng-wasmfile-release-sync@~0.31.0
 ```
 
 :::

@@ -1,4 +1,5 @@
 import { newQuickJSWASMModuleFromVariant, Scope, shouldInterruptAfterDeadline } from 'quickjs-emscripten-core'
+import { assertWasmCompatibility } from './assertWasmCompatibility.js'
 import { getTypescriptSupport } from './getTypescriptSupport.js'
 import { disposeHostPromises } from './sandbox/expose/hostPromises.js'
 import { setupFileSystem } from './sandbox/setupFileSystem.js'
@@ -18,6 +19,8 @@ import type { SandboxOptions } from './types/SandboxOptions.js'
  */
 export const loadQuickJs = async (variant: LoadQuickJsOptions) => {
 	const module = await newQuickJSWASMModuleFromVariant(variant)
+
+	assertWasmCompatibility(module)
 
 	// One long-lived runtime shared across calls; each call gets a fresh, isolated context that is
 	// disposed at the end of the call. This mirrors `loadAsyncQuickJs.ts` - see the detailed comment
