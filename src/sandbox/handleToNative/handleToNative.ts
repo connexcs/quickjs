@@ -58,8 +58,12 @@ export const handleToNative = (
 	}
 
 	if (ty === 'symbol') {
-		const desc = ctx.getString(ctx.getProp(handle, 'description'))
-		return Symbol(desc)
+		const descriptionHandle = ctx.getProp(handle, 'description')
+		try {
+			return Symbol(ctx.getString(descriptionHandle))
+		} finally {
+			descriptionHandle.dispose()
+		}
 	}
 
 	const asPromiseState: JSPromiseState & { notAPromise?: boolean } = ctx.getPromiseState(handle)
@@ -156,15 +160,16 @@ export const handleToNative = (
 					] as const
 				).reduce<PropertyDescriptor>((desc, [key, unmarshable]) => {
 					const h = ctx.getProp(value, key)
-					const t = ctx.typeof(h)
-
-					if (t === 'undefined') return desc
-					if (!unmarshable && t === 'boolean') {
-						desc[key] = ctx.dump(h)
-						return desc
-					}
+					let t = 'unknown'
 
 					try {
+						t = ctx.typeof(h)
+						if (t === 'undefined') return desc
+						if (!unmarshable && t === 'boolean') {
+							desc[key] = ctx.dump(h)
+							return desc
+						}
+
 						desc[key] = handleToNative(ctx, h, rootScope, childState)
 					} catch (error) {
 						// Re-throw (never swallow). Errors already carrying a deliberate,
@@ -299,14 +304,17 @@ export const handleToNative = (
 				}
 			}
 
-			const messageHandle = ctx.getProp(handle, 'message')
-			const stackHandle = ctx.getProp(handle, 'stack')
-
-			const message = ctx.dump(messageHandle) ?? ''
-			const stack = ctx.dump(stackHandle)
-
-			messageHandle.dispose()
-			stackHandle.dispose()
+			const errorScope = new Scope()
+			let message: string
+			let stack: unknown
+			try {
+				const messageHandle = errorScope.manage(ctx.getProp(handle, 'message'))
+				const stackHandle = errorScope.manage(ctx.getProp(handle, 'stack'))
+				message = ctx.dump(messageHandle) ?? ''
+				stack = ctx.dump(stackHandle)
+			} finally {
+				errorScope.dispose()
+			}
 
 			const e = new Error(message)
 			e.name = errorType
