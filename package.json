@@ -85,7 +85,7 @@
 	},
 	"license": "ISC",
 	"devDependencies": {
-		"@biomejs/biome": "^2.1.2",
+		"@biomejs/biome": "2.5.3",
 		"@hono/swagger-ui": "^0.5.2",
 		"@hono/zod-openapi": "^1.0.2",
 		"@jitl/quickjs-ng-wasmfile-debug-sync": "^0.31.0",

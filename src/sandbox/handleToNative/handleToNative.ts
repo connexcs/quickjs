@@ -89,14 +89,12 @@ export const handleToNative = (
 	// forever. `quickjs-emscripten-core` exposes no host-side handle-equality primitive,
 	// which is why the check lives guest-side. The Set is owned by `rootScope` so it is
 	// disposed with the rest of the serialization's long-lived handles.
-	const s: SerializeState =
-		state ??
-		{
-			seen: rootScope
-				? rootScope.manage(call(ctx, 'internal/serializer/newSeen.js', '() => new Set()', undefined))
-				: undefined,
-			depth: 0,
-		}
+	const s: SerializeState = state ?? {
+		seen: rootScope
+			? rootScope.manage(call(ctx, 'internal/serializer/newSeen.js', '() => new Set()', undefined))
+			: undefined,
+		depth: 0,
+	}
 
 	const childState: SerializeState = { seen: s.seen, depth: s.depth + 1 }
 
@@ -132,14 +130,7 @@ export const handleToNative = (
 
 	const unmarkSeen = (h: QuickJSHandle): void => {
 		if (!s.seen) return
-		call(
-			ctx,
-			'internal/serializer/unmarkSeen.js',
-			'(o, seen) => { seen.delete(o) }',
-			undefined,
-			h,
-			s.seen,
-		).dispose()
+		call(ctx, 'internal/serializer/unmarkSeen.js', '(o, seen) => { seen.delete(o) }', undefined, h, s.seen).dispose()
 	}
 
 	// biome-ignore lint/complexity/noBannedTypes: ok here
