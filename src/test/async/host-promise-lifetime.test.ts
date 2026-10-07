@@ -180,5 +180,20 @@ for (const variant of [
 			)
 			expect(result).toMatchObject({ ok: false, error: { message: 'conversion failed' } })
 		})
+		it('keeps nested promises and callable values usable after settlement cleanup', async () => {
+			const { runSandboxed } = await variant.load()
+			const result = await runSandboxed(
+				({ evalCode }) =>
+					evalCode(`
+				const value = await env.value()
+				export default [await value.nested, value.fn(), value.flag, value.unset === undefined]
+			`),
+				{
+					executionTimeout: 1000,
+					env: { value: async () => ({ nested: Promise.resolve(123), fn: () => 456, flag: true, unset: undefined }) },
+				},
+			)
+			expect(result).toMatchObject({ ok: true, data: [123, 456, true, true] })
+		})
 	})
 }
