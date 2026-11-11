@@ -79,6 +79,10 @@ export const handleToNative = (
 	}
 }
 
+/** Length of a guest string primitive, read without copying its contents to the host. */
+const stringLength = (ctx: QuickJSContext | QuickJSAsyncContext, handle: QuickJSHandle): number =>
+	ctx.getProp(handle, 'length').consume(l => ctx.getNumber(l))
+
 const convert = (
 	ctx: QuickJSContext | QuickJSAsyncContext,
 	handle: QuickJSHandle,
@@ -98,11 +102,10 @@ const convert = (
 		return null
 	}
 	if (ty === 'string') {
-		// A single string is bounded by the guest's own memory limit, so charging after the dump
-		// is acceptable.
-		const str = ctx.dump(handle) as string
-		chargeBudget(ctx, b, STRING_CHAR_COST * str.length)
-		return str
+		// Charge from the length before copying the characters out of the guest, so an
+		// over-budget string is never materialised on the host.
+		chargeBudget(ctx, b, STRING_CHAR_COST * stringLength(ctx, handle))
+		return ctx.dump(handle) as string
 	}
 	if (ty === 'number' || ty === 'boolean' || ty === 'bigint') {
 		return ctx.dump(handle)
@@ -221,8 +224,8 @@ const convert = (
 				// per-property `NODE_COST`), so only its characters are charged.
 				let keyName: unknown
 				if (ctx.typeof(key) === 'string') {
+					chargeBudget(ctx, b, STRING_CHAR_COST * stringLength(ctx, key))
 					keyName = ctx.dump(key) as string
-					chargeBudget(ctx, b, STRING_CHAR_COST * (keyName as string).length)
 				} else {
 					keyName = handleToNative(ctx, key, rootScope, childState)
 				}

@@ -140,11 +140,12 @@ export type SandboxBaseOptions = {
 	/**
 	 * Maximum estimated size in bytes of a single value converted from the sandbox to the host.
 	 * One conversion is the result of one `evalCode` call, or the `this` value plus all arguments of
-	 * one guest→host function call. When exceeded, `evalCode` returns a `RangeError` response, and a
+	 * one guest→host function call. The return value of a guest function that the host calls is a
+	 * conversion of its own. When exceeded, `evalCode` returns a `RangeError` response, and a
 	 * host function called by the guest is not invoked (the guest sees a thrown `RangeError`).
 	 *
-	 * The cost is estimated, not measured: 64 bytes for every converted value and property key,
-	 * 2 bytes per string character, the byte length of Buffers / ArrayBuffers, and 8 bytes per
+	 * The cost is estimated, not measured: 64 bytes for every converted value, 2 bytes per
+	 * string character (property names included), the byte length of Buffers / ArrayBuffers, and 8 bytes per
 	 * array slot of a declared array `length`. Repeated references to the same guest value are
 	 * charged each time, as the host receives a copy each time.
 	 *
