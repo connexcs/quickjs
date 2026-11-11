@@ -7,6 +7,40 @@ import { expose } from '../expose/expose.js'
 const DEFAULT_MAX_RANDOM_BYTES = 65536 // 64KB
 const DEFAULT_MAX_PBKDF2_ITERATIONS = 1000000
 const DEFAULT_MAX_SCRYPT_COST = 32768
+const DEFAULT_MAX_SCRYPT_BLOCK_SIZE = 16
+const DEFAULT_MAX_SCRYPT_PARALLELIZATION = 4
+const SCRYPT_MIN_MAXMEM = 32 * 1024 * 1024 // node's default maxmem
+const SCRYPT_MAXMEM_MARGIN = 1024 * 1024
+
+/**
+ * Strictly validate a guest-supplied integer. Rejects non-numbers, NaN, Infinity and fractions
+ * (CRYPTO_INVALID_ARG), values below min (CRYPTO_INVALID_ARG) and values above max (CRYPTO_LIMIT_EXCEEDED).
+ */
+const checkInt = (value: unknown, label: string, min: number, max: number): number => {
+	if (typeof value !== 'number' || !Number.isInteger(value)) {
+		throw new Error(`CRYPTO_INVALID_ARG: ${label} must be an integer`)
+	}
+	if (value < min) {
+		throw new Error(`CRYPTO_INVALID_ARG: ${label} must be ${min === 0 ? 'non-negative' : `at least ${min}`}`)
+	}
+	if (value > max) {
+		throw new Error(`CRYPTO_LIMIT_EXCEEDED: ${label} ${value} exceeds maximum ${max}`)
+	}
+	if (!Number.isSafeInteger(value)) {
+		throw new Error(`CRYPTO_INVALID_ARG: ${label} must be a safe integer`)
+	}
+	return value
+}
+
+/** Read a parameter that has two aliases; supplying both is an error (as in node). */
+const pickAlias = (opts: Record<string, unknown>, a: string, b: string, fallback: number): unknown => {
+	if (opts[a] !== undefined && opts[b] !== undefined) {
+		throw new Error(`CRYPTO_INVALID_ARG: scrypt options ${a} and ${b} cannot both be specified`)
+	}
+	const value = opts[a] !== undefined ? opts[a] : opts[b]
+	return value === undefined ? fallback : value
+}
+
 const DEFAULT_MAX_KEY_LENGTH = 1024
 const DEFAULT_MAX_HKDF_KEY_LENGTH = 1024
 
@@ -31,8 +65,40 @@ export const provideCrypto = (ctx: QuickJSContext | QuickJSAsyncContext, scope: 
 	const maxRandomBytes = cryptoConfig.maxRandomBytes ?? DEFAULT_MAX_RANDOM_BYTES
 	const maxPbkdf2Iterations = cryptoConfig.maxPbkdf2Iterations ?? DEFAULT_MAX_PBKDF2_ITERATIONS
 	const maxScryptCost = cryptoConfig.maxScryptCost ?? DEFAULT_MAX_SCRYPT_COST
+	const maxScryptBlockSize = cryptoConfig.maxScryptBlockSize ?? DEFAULT_MAX_SCRYPT_BLOCK_SIZE
+	const maxScryptParallelization = cryptoConfig.maxScryptParallelization ?? DEFAULT_MAX_SCRYPT_PARALLELIZATION
 	const maxKeyLength = cryptoConfig.maxKeyLength ?? DEFAULT_MAX_KEY_LENGTH
 	const maxHkdfKeyLength = cryptoConfig.maxHkdfKeyLength ?? DEFAULT_MAX_HKDF_KEY_LENGTH
+
+	const checkPbkdf2 = (iterations: unknown, keylen: unknown): [number, number] => [
+		checkInt(iterations, 'pbkdf2 iterations', 1, maxPbkdf2Iterations),
+		checkInt(keylen, 'key length', 1, maxKeyLength),
+	]
+
+	// Validated scrypt: guest options are never forwarded. Only validated N/r/p are read,
+	// and maxmem is computed host-side from them.
+	const runScrypt = (
+		password: string | Buffer,
+		salt: string | Buffer,
+		keylen: unknown,
+		guestOptions: unknown,
+	): Buffer => {
+		if (guestOptions !== undefined && guestOptions !== null && typeof guestOptions !== 'object') {
+			throw new Error('CRYPTO_INVALID_ARG: scrypt options must be an object')
+		}
+		const opts = (guestOptions ?? {}) as Record<string, unknown>
+		const N = checkInt(pickAlias(opts, 'N', 'cost', 16384), 'scrypt cost', 1, maxScryptCost)
+		const r = checkInt(pickAlias(opts, 'r', 'blockSize', 8), 'scrypt block size', 1, maxScryptBlockSize)
+		const p = checkInt(
+			pickAlias(opts, 'p', 'parallelization', 1),
+			'scrypt parallelization',
+			1,
+			maxScryptParallelization,
+		)
+		const len = checkInt(keylen, 'key length', 1, maxKeyLength)
+		const maxmem = Math.max(SCRYPT_MIN_MAXMEM, 128 * r * (N + 2 + p) + SCRYPT_MAXMEM_MARGIN)
+		return crypto.scryptSync(password, salt, len, { N, r, p, maxmem })
+	}
 
 	// Wrap crypto functions to handle object serialization across sandbox boundary
 	const cryptoFunctions = {
@@ -52,35 +118,17 @@ export const provideCrypto = (ctx: QuickJSContext | QuickJSAsyncContext, scope: 
 
 		// Random functions with size limits
 		randomBytes: (size: number) => {
-			if (size > maxRandomBytes) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: randomBytes size ${size} exceeds maximum ${maxRandomBytes}`)
-			}
-			if (size < 0) {
-				throw new Error('CRYPTO_INVALID_ARG: randomBytes size must be non-negative')
-			}
-			const buf = crypto.randomBytes(size)
+			const n = checkInt(size, 'randomBytes size', 0, maxRandomBytes)
 			// Convert to regular Uint8Array for serialization
-			return new Uint8Array(buf)
+			return new Uint8Array(crypto.randomBytes(n))
 		},
 
 		randomBytesHex: (size: number) => {
-			if (size > maxRandomBytes) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: randomBytes size ${size} exceeds maximum ${maxRandomBytes}`)
-			}
-			if (size < 0) {
-				throw new Error('CRYPTO_INVALID_ARG: randomBytes size must be non-negative')
-			}
-			return crypto.randomBytes(size).toString('hex')
+			return crypto.randomBytes(checkInt(size, 'randomBytes size', 0, maxRandomBytes)).toString('hex')
 		},
 
 		randomBytesBase64: (size: number) => {
-			if (size > maxRandomBytes) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: randomBytes size ${size} exceeds maximum ${maxRandomBytes}`)
-			}
-			if (size < 0) {
-				throw new Error('CRYPTO_INVALID_ARG: randomBytes size must be non-negative')
-			}
-			return crypto.randomBytes(size).toString('base64')
+			return crypto.randomBytes(checkInt(size, 'randomBytes size', 0, maxRandomBytes)).toString('base64')
 		},
 
 		randomUUID: () => {
@@ -99,20 +147,8 @@ export const provideCrypto = (ctx: QuickJSContext | QuickJSAsyncContext, scope: 
 			keylen: number,
 			digest: string,
 		) => {
-			if (iterations > maxPbkdf2Iterations) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: pbkdf2 iterations ${iterations} exceeds maximum ${maxPbkdf2Iterations}`)
-			}
-			if (iterations < 1) {
-				throw new Error('CRYPTO_INVALID_ARG: pbkdf2 iterations must be at least 1')
-			}
-			if (keylen > maxKeyLength) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: key length ${keylen} exceeds maximum ${maxKeyLength}`)
-			}
-			if (keylen < 1) {
-				throw new Error('CRYPTO_INVALID_ARG: key length must be at least 1')
-			}
-			const key = crypto.pbkdf2Sync(password, salt, iterations, keylen, digest)
-			return new Uint8Array(key)
+			const [iter, len] = checkPbkdf2(iterations, keylen)
+			return new Uint8Array(crypto.pbkdf2Sync(password, salt, iter, len, digest))
 		},
 
 		pbkdf2SyncHex: (
@@ -122,65 +158,21 @@ export const provideCrypto = (ctx: QuickJSContext | QuickJSAsyncContext, scope: 
 			keylen: number,
 			digest: string,
 		) => {
-			if (iterations > maxPbkdf2Iterations) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: pbkdf2 iterations ${iterations} exceeds maximum ${maxPbkdf2Iterations}`)
-			}
-			if (iterations < 1) {
-				throw new Error('CRYPTO_INVALID_ARG: pbkdf2 iterations must be at least 1')
-			}
-			if (keylen > maxKeyLength) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: key length ${keylen} exceeds maximum ${maxKeyLength}`)
-			}
-			if (keylen < 1) {
-				throw new Error('CRYPTO_INVALID_ARG: key length must be at least 1')
-			}
-			const key = crypto.pbkdf2Sync(password, salt, iterations, keylen, digest)
-			return key.toString('hex')
+			const [iter, len] = checkPbkdf2(iterations, keylen)
+			return crypto.pbkdf2Sync(password, salt, iter, len, digest).toString('hex')
 		},
 
-		scryptSync: (password: string | Buffer, salt: string | Buffer, keylen: number, options?: crypto.ScryptOptions) => {
-			const cost = options?.N ?? options?.cost ?? 16384
-			if (cost > maxScryptCost) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: scrypt cost ${cost} exceeds maximum ${maxScryptCost}`)
-			}
-			if (keylen > maxKeyLength) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: key length ${keylen} exceeds maximum ${maxKeyLength}`)
-			}
-			if (keylen < 1) {
-				throw new Error('CRYPTO_INVALID_ARG: key length must be at least 1')
-			}
-			const key = crypto.scryptSync(password, salt, keylen, options)
-			return new Uint8Array(key)
+		scryptSync: (password: string | Buffer, salt: string | Buffer, keylen: number, options?: unknown) => {
+			return new Uint8Array(runScrypt(password, salt, keylen, options))
 		},
 
-		scryptSyncHex: (
-			password: string | Buffer,
-			salt: string | Buffer,
-			keylen: number,
-			options?: crypto.ScryptOptions,
-		) => {
-			const cost = options?.N ?? options?.cost ?? 16384
-			if (cost > maxScryptCost) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: scrypt cost ${cost} exceeds maximum ${maxScryptCost}`)
-			}
-			if (keylen > maxKeyLength) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: key length ${keylen} exceeds maximum ${maxKeyLength}`)
-			}
-			if (keylen < 1) {
-				throw new Error('CRYPTO_INVALID_ARG: key length must be at least 1')
-			}
-			const key = crypto.scryptSync(password, salt, keylen, options)
-			return key.toString('hex')
+		scryptSyncHex: (password: string | Buffer, salt: string | Buffer, keylen: number, options?: unknown) => {
+			return runScrypt(password, salt, keylen, options).toString('hex')
 		},
 
 		hkdfSync: (digest: string, key: string | Buffer, salt: string | Buffer, info: string | Buffer, keylen: number) => {
-			if (keylen > maxHkdfKeyLength) {
-				throw new Error(`CRYPTO_LIMIT_EXCEEDED: HKDF key length ${keylen} exceeds maximum ${maxHkdfKeyLength}`)
-			}
-			if (keylen < 1) {
-				throw new Error('CRYPTO_INVALID_ARG: key length must be at least 1')
-			}
-			const derivedKey = crypto.hkdfSync(digest, key, salt, info, keylen)
+			const len = checkInt(keylen, 'HKDF key length', 1, maxHkdfKeyLength)
+			const derivedKey = crypto.hkdfSync(digest, key, salt, info, len)
 			return new Uint8Array(derivedKey)
 		},
 
