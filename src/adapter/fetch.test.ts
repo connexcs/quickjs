@@ -1,5 +1,12 @@
-import { describe, expect, it, mock } from 'bun:test'
+import { afterAll, describe, expect, it, mock } from 'bun:test'
 import { type GetFetchAdapterOptions, getDefaultFetchAdapter, HEADERS_MARKER } from './fetch.js'
+
+// Some tests below replace `global.fetch` without restoring it; restore it so other test files
+// (run in the same process) see the real implementation.
+const originalGlobalFetch = global.fetch
+afterAll(() => {
+	global.fetch = originalGlobalFetch
+})
 
 describe('core - fetch adapter', () => {
 	it('should block disallowed hosts', async () => {
