@@ -8,6 +8,14 @@ import {
 import type { SerializeState } from '../../types/SerializeState.js'
 import { getHandle } from '../expose/expose.js'
 import { call, clearSerializeError, SERIALIZE_ERROR, stashSerializeError } from '../helper.js'
+import {
+	ARRAY_SLOT_COST,
+	chargeBudget,
+	createSerializeBudget,
+	NODE_COST,
+	type SerializeBudget,
+	STRING_CHAR_COST,
+} from './serializeBudget.js'
 import { getSerializer } from './serializer/index.js'
 
 /**
@@ -29,14 +37,19 @@ const CONTAINER_CONSTRUCTORS = new Set(['Map', 'Set'])
  *
  * Cyclic / self-referential guest graphs are handled gracefully: a repeated reference
  * is replaced with a `'[Circular]'` marker rather than recursing forever. Genuine
- * failures (depth overflow, guest-call errors) throw with a descriptive message so they
- * bubble up to the caller instead of failing silently.
+ * failures (depth overflow, size budget, guest-call errors) throw with a descriptive message
+ * so they bubble up to the caller instead of failing silently.
+ *
+ * The size of the produced host value is bounded by a {@link SerializeBudget} (option
+ * `maxSerializedSize`); exceeding it throws a `RangeError`.
  *
  * @param ctx The sandbox context
  * @param handle The QuickJS handle to serialize
  * @param rootScope Scope owning long-lived handles created during serialization
- * @param state Internal recursion state (visited set + depth); created automatically on
- *   the top-level call — callers should not pass this.
+ * @param state Internal recursion state (visited set + depth + budget); created automatically
+ *   on the top-level call — callers should not pass this.
+ * @param budget Optional size budget for a top-level call, so several conversions (e.g. all
+ *   arguments of one guest→host call) share one budget. Ignored when `state` is passed.
  * @returns
  */
 export const handleToNative = (
@@ -44,7 +57,38 @@ export const handleToNative = (
 	handle: QuickJSHandle,
 	rootScope?: Scope,
 	state?: SerializeState,
+	budget?: SerializeBudget,
 ) => {
+	if (state) {
+		try {
+			return convert(ctx, handle, rootScope, state, budget)
+		} catch (error) {
+			// Nested conversions run inside guest callbacks, so a deliberate error must be re-stashed
+			// at every boundary it crosses (an enclosing `call` consumes the stash when it rethrows).
+			if (error && (error as any)[SERIALIZE_ERROR]) stashSerializeError(ctx, error)
+			throw error
+		}
+	}
+	try {
+		return convert(ctx, handle, rootScope, state, budget)
+	} catch (error) {
+		// The outermost conversion is done: nothing will consume a stashed error any more, so drop
+		// it instead of letting a later, unrelated `call` failure report it.
+		clearSerializeError(ctx)
+		throw error
+	}
+}
+
+const convert = (
+	ctx: QuickJSContext | QuickJSAsyncContext,
+	handle: QuickJSHandle,
+	rootScope: Scope | undefined,
+	state: SerializeState | undefined,
+	budget: SerializeBudget | undefined,
+): any => {
+	const b = state?.budget ?? budget ?? createSerializeBudget(ctx)
+	chargeBudget(ctx, b, NODE_COST)
+
 	const ty = ctx.typeof(handle)
 
 	if (ty === 'undefined') {
@@ -53,7 +97,14 @@ export const handleToNative = (
 	if (ty === 'null') {
 		return null
 	}
-	if (ty === 'number' || ty === 'string' || ty === 'boolean' || ty === 'bigint') {
+	if (ty === 'string') {
+		// A single string is bounded by the guest's own memory limit, so charging after the dump
+		// is acceptable.
+		const str = ctx.dump(handle) as string
+		chargeBudget(ctx, b, STRING_CHAR_COST * str.length)
+		return str
+	}
+	if (ty === 'number' || ty === 'boolean' || ty === 'bigint') {
 		return ctx.dump(handle)
 	}
 
@@ -87,11 +138,12 @@ export const handleToNative = (
 			const fallbackScope = rootScope && !rootScope.alive ? new Scope() : undefined
 			try {
 				const scope = fallbackScope ?? rootScope
-				// The recursion state's `seen` Set is owned by the original scope; never reuse it
-				// once that scope is gone.
-				const liveState = fallbackScope ? undefined : state
-				if (val.error) throw handleToNative(ctx, val.error, scope, liveState)
-				return handleToNative(ctx, val.value, scope, liveState)
+				// Settlement happens outside the walk that found the promise, so it is converted as a
+				// conversion of its own: the old recursion state (ancestor path, possibly owned by a
+				// disposed scope) no longer applies. Only the size budget is carried over, so values
+				// delivered through promises count against the conversion they belong to.
+				if (val.error) throw handleToNative(ctx, val.error, scope, undefined, b)
+				return handleToNative(ctx, val.value, scope, undefined, b)
 			} finally {
 				try {
 					fallbackScope?.dispose()
@@ -121,9 +173,10 @@ export const handleToNative = (
 			? rootScope.manage(call(ctx, 'internal/serializer/newSeen.js', '() => new Set()', undefined))
 			: undefined,
 		depth: 0,
+		budget: b,
 	}
 
-	const childState: SerializeState = { seen: s.seen, depth: s.depth + 1 }
+	const childState: SerializeState = { seen: s.seen, depth: s.depth + 1, budget: b }
 
 	if (s.depth > MAX_DEPTH) {
 		const e = new RangeError(
@@ -164,7 +217,15 @@ export const handleToNative = (
 	const setProperties = (obj: Object | Function, h: QuickJSHandle, isFunction = false) => {
 		ctx
 			.newFunction('', (key, value) => {
-				const keyName = handleToNative(ctx, key, rootScope, childState)
+				// A string key is not a node of its own (the property's value is, and carries the
+				// per-property `NODE_COST`), so only its characters are charged.
+				let keyName: unknown
+				if (ctx.typeof(key) === 'string') {
+					keyName = ctx.dump(key) as string
+					chargeBudget(ctx, b, STRING_CHAR_COST * (keyName as string).length)
+				} else {
+					keyName = handleToNative(ctx, key, rootScope, childState)
+				}
 				if (typeof keyName !== 'string' && typeof keyName !== 'number' && typeof keyName !== 'symbol') return
 
 				const desc = (
@@ -214,6 +275,12 @@ export const handleToNative = (
 
 					return desc
 				}, {})
+
+				// A guest array can declare a huge `length` without any elements (`new Array(2 ** 32 - 1)`);
+				// defining it on the host array would be cheap for the guest and costly for the host.
+				if (Array.isArray(obj) && keyName === 'length' && typeof desc.value === 'number') {
+					chargeBudget(ctx, b, ARRAY_SLOT_COST * desc.value)
+				}
 
 				Object.defineProperty(obj, keyName, desc)
 			})
@@ -378,7 +445,12 @@ export const handleToNative = (
 				if (ret) {
 					return ret
 				}
-			} catch (_error) {
+			} catch (error) {
+				// A budget failure is a deliberate, final error — never a "look-alike" signal.
+				if (b.exceeded) {
+					stashSerializeError(ctx, error)
+					throw error
+				}
 				// The serializer is chosen by `constructor.name`, which is unreliable: a value can
 				// *report* a matching constructor (e.g. `Date.prototype`, a function's `prototype`,
 				// a class that `extends Map`, or a spoofed `constructor`) without being an instance

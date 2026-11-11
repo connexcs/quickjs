@@ -1,4 +1,5 @@
 import type { QuickJSHandle } from 'quickjs-emscripten-core'
+import type { SerializeBudget } from '../sandbox/handleToNative/serializeBudget.js'
 
 /**
  * Internal state threaded through the recursive guest→host serialization
@@ -14,4 +15,6 @@ import type { QuickJSHandle } from 'quickjs-emscripten-core'
 export type SerializeState = {
 	seen: QuickJSHandle | undefined
 	depth: number
+	/** Size budget shared by the whole conversion (see `serializeBudget.ts`). */
+	budget: SerializeBudget
 }

@@ -2,6 +2,7 @@ import type { QuickJSAsyncContext, QuickJSContext, QuickJSHandle, Scope } from '
 import type { Serializer } from '../../../types/Serializer.js'
 import type { SerializeState } from '../../../types/SerializeState.js'
 import { call } from '../../helper.js'
+import { chargeBudget, createSerializeBudget } from '../serializeBudget.js'
 
 /**
  * Serializes a guest `Buffer` (or any Uint8Array-like view) to a host `Buffer`.
@@ -17,8 +18,9 @@ export const serializeBuffer: Serializer = (
 	ctx: QuickJSContext | QuickJSAsyncContext,
 	handle: QuickJSHandle,
 	_rootScope?: Scope,
-	_state?: SerializeState,
+	state?: SerializeState,
 ) => {
+	const budget = state?.budget ?? createSerializeBudget(ctx)
 	let b: Buffer | undefined
 	ctx
 		.newFunction('', (bufferHandle, offsetHandle, lengthHandle) => {
@@ -26,6 +28,9 @@ export const serializeBuffer: Serializer = (
 			const offset = ctx.getNumber(offsetHandle)
 			const length = ctx.getNumber(lengthHandle)
 			if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0) return
+
+			// Charge the validated length before copying anything out of the guest.
+			chargeBudget(ctx, budget, length)
 
 			// `ctx.getArrayBuffer` copies the bytes out of the guest; the copy is bounded by the
 			// guest's own memory limit, and it is released as soon as we have our slice.
