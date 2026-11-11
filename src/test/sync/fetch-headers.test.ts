@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test'
 import variant from '@jitl/quickjs-ng-wasmfile-release-sync'
+import { getDefaultFetchAdapter } from '../../adapter/fetch.js'
 import { loadQuickJs } from '../../loadQuickJs.js'
 import type { OkResponse } from '../../types/OkResponse.js'
 
@@ -42,6 +43,7 @@ describe('sync - fetch headers', () => {
 
 			const result = await runtime.runSandboxed(async ({ evalCode }) => evalCode(code), {
 				allowFetch: true,
+				fetchAdapter: getDefaultFetchAdapter({ dnsLookup: async () => ['93.184.216.34'] }),
 			})
 
 			expect(result.ok).toBeTrue()
@@ -89,6 +91,7 @@ describe('sync - fetch headers', () => {
 
 			const result = await runtime.runSandboxed(async ({ evalCode }) => evalCode(code), {
 				allowFetch: true,
+				fetchAdapter: getDefaultFetchAdapter({ dnsLookup: async () => ['93.184.216.34'] }),
 			})
 
 			expect(result.ok).toBeTrue()
@@ -134,6 +137,7 @@ describe('sync - fetch headers', () => {
 
 			const result = await runtime.runSandboxed(async ({ evalCode }) => evalCode(code), {
 				allowFetch: true,
+				fetchAdapter: getDefaultFetchAdapter({ dnsLookup: async () => ['93.184.216.34'] }),
 			})
 
 			expect(result.ok).toBeTrue()
@@ -175,6 +179,7 @@ describe('sync - fetch headers', () => {
 
 			const result = await runtime.runSandboxed(async ({ evalCode }) => evalCode(code), {
 				allowFetch: true,
+				fetchAdapter: getDefaultFetchAdapter({ dnsLookup: async () => ['93.184.216.34'] }),
 			})
 
 			expect(result.ok).toBeTrue()
@@ -218,6 +223,7 @@ describe('sync - fetch headers', () => {
 
 			const result = await runtime.runSandboxed(async ({ evalCode }) => evalCode(code), {
 				allowFetch: true,
+				fetchAdapter: getDefaultFetchAdapter({ dnsLookup: async () => ['93.184.216.34'] }),
 			})
 
 			expect(result.ok).toBeTrue()

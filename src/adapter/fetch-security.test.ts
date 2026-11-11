@@ -205,16 +205,18 @@ describe('fetch adapter - host validation', () => {
 		expect(calls.length).toBe(1)
 	})
 
-	it('lets the fetch proceed when the resolver fails', async () => {
+	it('fails closed when the resolver errors or times out', async () => {
 		const calls = spyFetch()
-		const adapter = getDefaultFetchAdapter({
+		const failing = getDefaultFetchAdapter({
 			...base,
 			dnsLookup: async () => {
 				throw new Error('ENOTFOUND')
 			},
 		})
-		expect((await adapter('http://nx.example/')).status).toBe(200)
-		expect(calls.length).toBe(1)
+		expect((await failing('http://nx.example/')).status).toBe(403)
+		const hanging = getDefaultFetchAdapter({ ...base, timeout: 50, dnsLookup: () => new Promise<string[]>(() => {}) })
+		expect((await hanging('http://slow.example/')).status).toBe(403)
+		expect(calls.length).toBe(0)
 	})
 
 	it('skips DNS resolution for hosts in allowedHosts and when disallowPrivateNetworks is false', async () => {

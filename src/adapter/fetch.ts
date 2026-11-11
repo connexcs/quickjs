@@ -36,7 +36,8 @@ export type GetFetchAdapterOptions = {
 	 * (IPv4 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.168/16, 192.0.0/24, 198.18/15,
 	 * 224/4 and above; IPv6 `::`, `::1`, fc00::/7, fe80::/10, ff00::/8 and IPv4-mapped / NAT64 /
 	 * 6to4 embeddings of those). Literal IP hosts are checked directly; host names are resolved
-	 * (best effort, pre-flight) and rejected if any address is private. A host listed explicitly in
+	 * before the request and rejected if any address is private, or if resolution fails or times
+	 * out (fail closed). A host listed explicitly in
 	 * `allowedHosts` is exempt from this implicit block, but never from `disallowedHosts`.
 	 * @default true
 	 */
@@ -298,8 +299,16 @@ const normalizeHost = (host: string): string => {
 	return h
 }
 
+/** Thrown by the default resolver when the runtime has no DNS API (e.g. a browser). */
+class DnsUnavailableError extends Error {}
+
 const defaultDnsLookup = async (hostname: string): Promise<string[]> => {
-	const dns = await import('node:dns/promises')
+	let dns: typeof import('node:dns/promises')
+	try {
+		dns = await import('node:dns/promises')
+	} catch {
+		throw new DnsUnavailableError('DNS resolution is not available in this runtime')
+	}
 	const results = await dns.lookup(hostname, { all: true })
 	return results.map(r => r.address)
 }
@@ -342,9 +351,12 @@ export const getDefaultFetchAdapter = (adapterOptions: GetFetchAdapterOptions = 
 				}),
 			])
 			return addresses.some(isPrivateAddress)
-		} catch {
-			// Resolver unavailable or resolution failed: let the fetch proceed and fail naturally.
-			return false
+		} catch (error) {
+			// No DNS API in this runtime (browser): the check cannot be done here, so skip it.
+			if (error instanceof DnsUnavailableError) return false
+			// Resolution failed or timed out: fail closed. Letting the request proceed would hand
+			// the decision to fetch's own resolver, which may then reach a private address.
+			return true
 		} finally {
 			if (timer) clearTimeout(timer)
 		}
