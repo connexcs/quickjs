@@ -486,6 +486,17 @@ describe('fetch adapter - redirects', () => {
 		expect(await r302.json()).toMatchObject({ method: 'GET', body: '' })
 	})
 
+	it('replays a native Request body on a 307 hop', async () => {
+		const req = new Request(`${urlA}/to-b-307`, {
+			method: 'POST',
+			body: 'native-data',
+			headers: { 'content-type': 'text/plain' },
+		})
+		const res = await make()(req, { redirect: 'follow' })
+		expect(res.status).toBe(200)
+		expect(await res.json()).toMatchObject({ method: 'POST', body: 'native-data', contentType: 'text/plain' })
+	})
+
 	it('redirect: follow to a DNS name resolving to a private address is blocked', async () => {
 		const calls = spyFetch(input =>
 			String(input).startsWith('http://first.example')

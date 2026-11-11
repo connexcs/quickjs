@@ -439,6 +439,15 @@ export const getDefaultFetchAdapter = (adapterOptions: GetFetchAdapterOptions = 
 				// would leak (headers via `_headers`, body ignored). A genuine native
 				// `Request` carries those fields on the object, so preserve it (init keys still
 				// override it, and `redirect` is always set explicitly).
+				// In follow mode the body may have to be replayed on a 307/308 hop. The initial fetch
+				// consumes a native Request's body, so buffer it first.
+				const nativeBody =
+					redirectMode === 'follow' &&
+					nativeRequest?.body &&
+					safeInit.body === undefined &&
+					!['GET', 'HEAD'].includes((safeInit.method ?? nativeRequest.method).toUpperCase())
+						? await nativeRequest.clone().arrayBuffer()
+						: undefined
 				let res = await fetch(nativeRequest ?? urlString, safeInit)
 
 				if (redirectMode === 'follow') {
@@ -446,11 +455,7 @@ export const getDefaultFetchAdapter = (adapterOptions: GetFetchAdapterOptions = 
 					let currentUrl = parsedUrl
 					let method = (safeInit.method ?? nativeRequest?.method ?? 'GET').toUpperCase()
 					const hopHeaders = new Headers(safeInit.headers ?? nativeRequest?.headers)
-					let body: BodyInit | null | undefined =
-						safeInit.body ??
-						(nativeRequest && method !== 'GET' && method !== 'HEAD'
-							? await nativeRequest.clone().arrayBuffer()
-							: undefined)
+					let body: BodyInit | null | undefined = safeInit.body ?? nativeBody
 					let hops = 0
 					while (REDIRECT_STATUSES.has(res.status)) {
 						const location = res.headers.get('location')
