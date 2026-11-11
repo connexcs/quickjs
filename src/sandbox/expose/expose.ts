@@ -1,6 +1,7 @@
 import { type QuickJSAsyncContext, type QuickJSContext, type QuickJSHandle, Scope } from 'quickjs-emscripten-core'
 import { HEADERS_MARKER } from '../../adapter/fetch.js'
 import { handleToNative } from '../handleToNative/handleToNative.js'
+import { createSerializeBudget } from '../handleToNative/serializeBudget.js'
 import { hostPromiseHandle } from './hostPromises.js'
 import { isES2015Class } from './isES2015Class.js'
 import { isObject } from './isObject.js'
@@ -53,25 +54,37 @@ export const getHandle = (
 			return ctx.newFunction(name, function (...args) {
 				const s = new Scope()
 
-				const that = handleToNative(ctx, this, s)
-				if (this) {
-					this.dispose()
-				}
-
-				if (isES2015Class(input) && isObject(that)) {
-					const result = new input(...args)
-					for (const [key, value] of Object.entries(result)) {
-						ctx.setProp(this, key, getHandle(s, ctx, key, value))
-					}
-					s.dispose()
-
-					return this as any
-				}
-
+				// One budget per guest→host call, shared by `this` and every argument.
+				const budget = createSerializeBudget(ctx)
+				let that: unknown
 				const rawParam: any[] = []
-				for (const param of args) {
-					const p = s.manage(param)
-					rawParam.push(handleToNative(ctx, p, s))
+				try {
+					that = handleToNative(ctx, this, s, undefined, budget)
+					if (this) {
+						this.dispose()
+					}
+
+					if (isES2015Class(input) && isObject(that)) {
+						const result = new input(...args)
+						for (const [key, value] of Object.entries(result)) {
+							ctx.setProp(this, key, getHandle(s, ctx, key, value))
+						}
+						s.dispose()
+
+						return this as any
+					}
+
+					for (const param of args) {
+						const p = s.manage(param)
+						rawParam.push(handleToNative(ctx, p, s, undefined, budget))
+					}
+				} catch (error) {
+					// A failed conversion (e.g. size budget) must not leak the call scope; the host
+					// function is not invoked.
+					s.dispose()
+					if (this?.alive) this.dispose()
+					for (const arg of args) if (arg.alive) arg.dispose()
+					throw error
 				}
 
 				try {

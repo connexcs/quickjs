@@ -22,8 +22,7 @@ export const serializeMap: Serializer = (
 				ctx,
 				'internal/serializer/serializeMap.js',
 				`(m,fn) => {
-            for(const [key,value] of m.entries())
-              fn(key,value)
+            Map.prototype.forEach.call(m, (value, key) => fn(key, value))
           }`,
 				undefined,
 				handle,

@@ -1,6 +1,7 @@
 import type { IFs } from 'memfs'
 import type { QuickJSAsyncContext, Scope } from 'quickjs-emscripten-core'
 import type { SandboxBaseOptions } from '../../types/SandboxOptions.js'
+import { setSerializeLimit } from '../handleToNative/serializeBudget.js'
 import { provideConsole } from '../provide/provideConsole.js'
 import { provideCrypto } from '../provide/provideCrypto.js'
 import { provideEnv } from '../provide/provideEnv.js'
@@ -13,6 +14,8 @@ export const prepareAsyncSandbox = (
 	sandboxOptions: SandboxBaseOptions,
 	fs: IFs,
 ) => {
+	// Must run first: every guest→host conversion below (and later) reads this limit.
+	setSerializeLimit(ctx, sandboxOptions.maxSerializedSize)
 	provideFs(ctx, scope, sandboxOptions, fs)
 	provideConsole(ctx, scope, sandboxOptions)
 	provideEnv(ctx, scope, sandboxOptions)

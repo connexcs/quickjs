@@ -8,6 +8,14 @@ import {
 import type { SerializeState } from '../../types/SerializeState.js'
 import { getHandle } from '../expose/expose.js'
 import { call, clearSerializeError, SERIALIZE_ERROR, stashSerializeError } from '../helper.js'
+import {
+	ARRAY_SLOT_COST,
+	chargeBudget,
+	createSerializeBudget,
+	NODE_COST,
+	type SerializeBudget,
+	STRING_CHAR_COST,
+} from './serializeBudget.js'
 import { getSerializer } from './serializer/index.js'
 
 /**
@@ -29,14 +37,19 @@ const CONTAINER_CONSTRUCTORS = new Set(['Map', 'Set'])
  *
  * Cyclic / self-referential guest graphs are handled gracefully: a repeated reference
  * is replaced with a `'[Circular]'` marker rather than recursing forever. Genuine
- * failures (depth overflow, guest-call errors) throw with a descriptive message so they
- * bubble up to the caller instead of failing silently.
+ * failures (depth overflow, size budget, guest-call errors) throw with a descriptive message
+ * so they bubble up to the caller instead of failing silently.
+ *
+ * The size of the produced host value is bounded by a {@link SerializeBudget} (option
+ * `maxSerializedSize`); exceeding it throws a `RangeError`.
  *
  * @param ctx The sandbox context
  * @param handle The QuickJS handle to serialize
  * @param rootScope Scope owning long-lived handles created during serialization
- * @param state Internal recursion state (visited set + depth); created automatically on
- *   the top-level call — callers should not pass this.
+ * @param state Internal recursion state (visited set + depth + budget); created automatically
+ *   on the top-level call — callers should not pass this.
+ * @param budget Optional size budget for a top-level call, so several conversions (e.g. all
+ *   arguments of one guest→host call) share one budget. Ignored when `state` is passed.
  * @returns
  */
 export const handleToNative = (
@@ -44,7 +57,42 @@ export const handleToNative = (
 	handle: QuickJSHandle,
 	rootScope?: Scope,
 	state?: SerializeState,
+	budget?: SerializeBudget,
 ) => {
+	if (state) {
+		try {
+			return convert(ctx, handle, rootScope, state, budget)
+		} catch (error) {
+			// Nested conversions run inside guest callbacks, so a deliberate error must be re-stashed
+			// at every boundary it crosses (an enclosing `call` consumes the stash when it rethrows).
+			if (error && (error as any)[SERIALIZE_ERROR]) stashSerializeError(ctx, error)
+			throw error
+		}
+	}
+	try {
+		return convert(ctx, handle, rootScope, state, budget)
+	} catch (error) {
+		// The outermost conversion is done: nothing will consume a stashed error any more, so drop
+		// it instead of letting a later, unrelated `call` failure report it.
+		clearSerializeError(ctx)
+		throw error
+	}
+}
+
+/** Length of a guest string primitive, read without copying its contents to the host. */
+const stringLength = (ctx: QuickJSContext | QuickJSAsyncContext, handle: QuickJSHandle): number =>
+	ctx.getProp(handle, 'length').consume(l => ctx.getNumber(l))
+
+const convert = (
+	ctx: QuickJSContext | QuickJSAsyncContext,
+	handle: QuickJSHandle,
+	rootScope: Scope | undefined,
+	state: SerializeState | undefined,
+	budget: SerializeBudget | undefined,
+): any => {
+	const b = state?.budget ?? budget ?? createSerializeBudget(ctx)
+	chargeBudget(ctx, b, NODE_COST)
+
 	const ty = ctx.typeof(handle)
 
 	if (ty === 'undefined') {
@@ -53,7 +101,13 @@ export const handleToNative = (
 	if (ty === 'null') {
 		return null
 	}
-	if (ty === 'number' || ty === 'string' || ty === 'boolean' || ty === 'bigint') {
+	if (ty === 'string') {
+		// Charge from the length before copying the characters out of the guest, so an
+		// over-budget string is never materialised on the host.
+		chargeBudget(ctx, b, STRING_CHAR_COST * stringLength(ctx, handle))
+		return ctx.dump(handle) as string
+	}
+	if (ty === 'number' || ty === 'boolean' || ty === 'bigint') {
 		return ctx.dump(handle)
 	}
 
@@ -73,14 +127,40 @@ export const handleToNative = (
 		// borrows the input handle instead, so only dispose real snapshots.
 		if (asPromiseState.type === 'fulfilled') asPromiseState.value.dispose()
 		if (asPromiseState.type === 'rejected') asPromiseState.error.dispose()
-		return ctx.resolvePromise(handle).then(val => {
+		const hostPromise = ctx.resolvePromise(handle).then(val => {
+			// The guest promise may settle long after the call that produced it has returned. By
+			// then the context may be gone, in which case the settlement handles cannot be used:
+			// reject with an ordinary error instead of letting an internal QuickJSUseAfterFree
+			// surface.
+			if (!ctx.alive) {
+				throw new Error('The sandbox was disposed before the guest promise settled')
+			}
+			// `rootScope` is typically the per-call scope of a host function and is disposed as soon
+			// as that function returns. A host function that awaits the promise later still deserves
+			// its value, so convert into a short-lived scope of our own when the original is gone.
+			const fallbackScope = rootScope && !rootScope.alive ? new Scope() : undefined
 			try {
-				if (val.error) throw handleToNative(ctx, val.error, rootScope, state)
-				return handleToNative(ctx, val.value, rootScope, state)
+				const scope = fallbackScope ?? rootScope
+				// Settlement happens outside the walk that found the promise, so it is converted as a
+				// conversion of its own: the old recursion state (ancestor path, possibly owned by a
+				// disposed scope) no longer applies. Only the size budget is carried over, so values
+				// delivered through promises count against the conversion they belong to.
+				if (val.error) throw handleToNative(ctx, val.error, scope, undefined, b)
+				return handleToNative(ctx, val.value, scope, undefined, b)
 			} finally {
-				val.dispose()
+				try {
+					fallbackScope?.dispose()
+				} finally {
+					val.dispose()
+				}
 			}
 		})
+		// A guest can hand a promise to any host function, and that function is free to ignore it.
+		// If the promise then rejects, nobody is left to handle it and the host process would see
+		// an unhandled rejection. Mark it handled here; callers that DO await the returned promise
+		// (it is returned as-is) still observe the rejection normally.
+		hostPromise.catch(() => {})
+		return hostPromise
 	}
 
 	// Everything below serializes an object / function — the only shapes that can be
@@ -96,9 +176,10 @@ export const handleToNative = (
 			? rootScope.manage(call(ctx, 'internal/serializer/newSeen.js', '() => new Set()', undefined))
 			: undefined,
 		depth: 0,
+		budget: b,
 	}
 
-	const childState: SerializeState = { seen: s.seen, depth: s.depth + 1 }
+	const childState: SerializeState = { seen: s.seen, depth: s.depth + 1, budget: b }
 
 	if (s.depth > MAX_DEPTH) {
 		const e = new RangeError(
@@ -139,7 +220,15 @@ export const handleToNative = (
 	const setProperties = (obj: Object | Function, h: QuickJSHandle, isFunction = false) => {
 		ctx
 			.newFunction('', (key, value) => {
-				const keyName = handleToNative(ctx, key, rootScope, childState)
+				// A string key is not a node of its own (the property's value is, and carries the
+				// per-property `NODE_COST`), so only its characters are charged.
+				let keyName: unknown
+				if (ctx.typeof(key) === 'string') {
+					chargeBudget(ctx, b, STRING_CHAR_COST * stringLength(ctx, key))
+					keyName = ctx.dump(key) as string
+				} else {
+					keyName = handleToNative(ctx, key, rootScope, childState)
+				}
 				if (typeof keyName !== 'string' && typeof keyName !== 'number' && typeof keyName !== 'symbol') return
 
 				const desc = (
@@ -190,6 +279,12 @@ export const handleToNative = (
 					return desc
 				}, {})
 
+				// A guest array can declare a huge `length` without any elements (`new Array(2 ** 32 - 1)`);
+				// defining it on the host array would be cheap for the guest and costly for the host.
+				if (Array.isArray(obj) && keyName === 'length' && typeof desc.value === 'number') {
+					chargeBudget(ctx, b, ARRAY_SLOT_COST * desc.value)
+				}
+
 				Object.defineProperty(obj, keyName, desc)
 			})
 			.consume(f => {
@@ -228,6 +323,14 @@ export const handleToNative = (
 		const cpHandle = rootScope.manage(handle.dup())
 
 		const f = function (this: any, ...args: any[]) {
+			// Nothing may touch the context before this check. The handle is owned by `rootScope`
+			// (often a per-call scope) and dies with it, but the host may keep the wrapper and invoke
+			// it later, e.g. an async callback of a host library or a getter read after the sandbox
+			// finished. Calling into a disposed handle throws QuickJSUseAfterFree from inside that
+			// library's own machinery, which a guest must not be able to trigger. A late call is
+			// simply dropped.
+			if (!ctx.alive || !cpHandle.alive) return undefined
+
 			const scope = new Scope()
 			const thisHandle = getHandle(scope, ctx, '', this)
 			const argHandles = args.map(a => getHandle(scope, ctx, '', a))
@@ -280,8 +383,8 @@ export const handleToNative = (
 						const type = tag.slice(8, -1)
 						if (type.endsWith('Error')) return type
 					}
+					if (typeof o?.name === 'string' && typeof o?.message === 'string') return 'Error'
 				} catch {}
-				if (typeof o?.name === 'string' && typeof o?.message === 'string') return 'Error'
 				return undefined
 			}`,
 			undefined,
@@ -325,7 +428,7 @@ export const handleToNative = (
 		const constructorName = call(
 			ctx,
 			'internal/serializer/getConstructorName.js',
-			`o => typeof o?.constructor?.name === 'string' ? o.constructor.name : undefined`,
+			`o => { try { return typeof o?.constructor?.name === 'string' ? o.constructor.name : undefined } catch { return undefined } }`,
 			undefined,
 			handle,
 		).consume(r => ctx.dump(r))
@@ -345,7 +448,12 @@ export const handleToNative = (
 				if (ret) {
 					return ret
 				}
-			} catch (_error) {
+			} catch (error) {
+				// A budget failure is a deliberate, final error — never a "look-alike" signal.
+				if (b.exceeded) {
+					stashSerializeError(ctx, error)
+					throw error
+				}
 				// The serializer is chosen by `constructor.name`, which is unreliable: a value can
 				// *report* a matching constructor (e.g. `Date.prototype`, a function's `prototype`,
 				// a class that `extends Map`, or a spoofed `constructor`) without being an instance

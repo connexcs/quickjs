@@ -30,6 +30,20 @@ export type CryptoOptions = {
 	maxScryptCost?: number
 
 	/**
+	 * Maximum block size parameter (r, alias blockSize) for scryptSync().
+	 * Memory use scales with N * r and CPU time with N * r * p.
+	 * @default 16
+	 */
+	maxScryptBlockSize?: number
+
+	/**
+	 * Maximum parallelization parameter (p, alias parallelization) for scryptSync().
+	 * CPU time scales linearly with p.
+	 * @default 4
+	 */
+	maxScryptParallelization?: number
+
+	/**
 	 * Maximum key length in bytes for key derivation functions
 	 * @default 1024
 	 */

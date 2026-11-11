@@ -1,12 +1,22 @@
-import { describe, expect, it, mock } from 'bun:test'
+import { afterAll, describe, expect, it, mock } from 'bun:test'
 import { type GetFetchAdapterOptions, getDefaultFetchAdapter, HEADERS_MARKER } from './fetch.js'
+
+// Some tests below replace `global.fetch` without restoring it; restore it so other test files
+// (run in the same process) see the real implementation.
+// Keep the tests hermetic: the adapter's DNS pre-flight fails closed, so never hit a real resolver.
+const publicDns = async () => ['93.184.216.34']
+
+const originalGlobalFetch = global.fetch
+afterAll(() => {
+	global.fetch = originalGlobalFetch
+})
 
 describe('core - fetch adapter', () => {
 	it('should block disallowed hosts', async () => {
 		const adapterOptions: GetFetchAdapterOptions = {
 			disallowedHosts: ['example.com'],
 		}
-		const fetchAdapter = getDefaultFetchAdapter(adapterOptions)
+		const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns, ...adapterOptions })
 
 		const response = await fetchAdapter('http://example.com')
 
@@ -18,7 +28,7 @@ describe('core - fetch adapter', () => {
 		const adapterOptions: GetFetchAdapterOptions = {
 			allowedHosts: ['example.com'],
 		}
-		const fetchAdapter = getDefaultFetchAdapter(adapterOptions)
+		const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns, ...adapterOptions })
 
 		const response = await fetchAdapter('http://example.com')
 
@@ -29,7 +39,7 @@ describe('core - fetch adapter', () => {
 		const adapterOptions: GetFetchAdapterOptions = {
 			timeout: 1000,
 		}
-		const fetchAdapter = getDefaultFetchAdapter(adapterOptions)
+		const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns, ...adapterOptions })
 
 		try {
 			await fetchAdapter('http://example.com', { signal: AbortSignal.timeout(50) })
@@ -43,7 +53,7 @@ describe('core - fetch adapter', () => {
 			rateLimitPoints: 1,
 			rateLimitDuration: 1,
 		}
-		const fetchAdapter = getDefaultFetchAdapter(adapterOptions)
+		const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns, ...adapterOptions })
 
 		const response1 = await fetchAdapter('http://example.com')
 		expect(response1.status).not.toBe(429)
@@ -55,7 +65,7 @@ describe('core - fetch adapter', () => {
 
 	it('should not enforce CORS policy by default', async () => {
 		const adapterOptions: GetFetchAdapterOptions = {}
-		const fetchAdapter = getDefaultFetchAdapter(adapterOptions)
+		const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns, ...adapterOptions })
 
 		// Mocking fetch to return a response without CORS headers
 		global.fetch = Object.assign(mock().mockResolvedValue(new Response('', { status: 200, statusText: 'OK' })), {
@@ -71,7 +81,7 @@ describe('core - fetch adapter', () => {
 		const adapterOptions: GetFetchAdapterOptions = {
 			corsCheck: true,
 		}
-		const fetchAdapter = getDefaultFetchAdapter(adapterOptions)
+		const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns, ...adapterOptions })
 
 		// Mocking fetch to return a response without CORS headers
 		global.fetch = Object.assign(mock().mockResolvedValue(new Response('', { status: 200, statusText: 'OK' })), {
@@ -84,7 +94,7 @@ describe('core - fetch adapter', () => {
 	})
 
 	it('should handle Request objects', async () => {
-		const fetchAdapter = getDefaultFetchAdapter({})
+		const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns })
 
 		// Mock fetch to avoid real network call
 		global.fetch = Object.assign(mock().mockResolvedValue(new Response('', { status: 200, statusText: 'OK' })), {
@@ -121,7 +131,7 @@ describe('core - fetch adapter request header normalization', () => {
 	it('passes a plain object header through unchanged', async () => {
 		const { calls, restore } = setupCapture()
 		try {
-			const fetchAdapter = getDefaultFetchAdapter({})
+			const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns })
 			await fetchAdapter('http://example.com', {
 				method: 'POST',
 				headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
@@ -138,7 +148,7 @@ describe('core - fetch adapter request header normalization', () => {
 	it('passes a native Headers object through', async () => {
 		const { calls, restore } = setupCapture()
 		try {
-			const fetchAdapter = getDefaultFetchAdapter({})
+			const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns })
 			const headers = new Headers({ authorization: 'Bearer token', 'content-type': 'application/json' })
 			await fetchAdapter('http://example.com', { method: 'POST', headers })
 			const h = sentHeaders(calls[0]?.init)
@@ -153,7 +163,7 @@ describe('core - fetch adapter request header normalization', () => {
 	it('flattens our createHeadersObject shape (_headers plain object + marker)', async () => {
 		const { calls, restore } = setupCapture()
 		try {
-			const fetchAdapter = getDefaultFetchAdapter({})
+			const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns })
 			const headersLike = {
 				[HEADERS_MARKER]: true,
 				_headers: { authorization: 'Bearer token', 'content-type': 'application/json' },
@@ -171,7 +181,7 @@ describe('core - fetch adapter request header normalization', () => {
 	it('flattens the { _headers: Map } shape from the handoff repro', async () => {
 		const { calls, restore } = setupCapture()
 		try {
-			const fetchAdapter = getDefaultFetchAdapter({})
+			const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns })
 			const headersLike = {
 				_headers: new Map([
 					['authorization', 'Bearer token'],
@@ -191,7 +201,7 @@ describe('core - fetch adapter request header normalization', () => {
 	it('flattens the sandbox Headers polyfill shape ({ map: { name: [value] } })', async () => {
 		const { calls, restore } = setupCapture()
 		try {
-			const fetchAdapter = getDefaultFetchAdapter({})
+			const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns })
 			const headersLike = {
 				map: {
 					authorization: ['Bearer token'],
@@ -212,7 +222,7 @@ describe('core - fetch adapter request header normalization', () => {
 	it('forwards the URL string (not the raw input object) to host fetch', async () => {
 		const { calls, restore } = setupCapture()
 		try {
-			const fetchAdapter = getDefaultFetchAdapter({})
+			const fetchAdapter = getDefaultFetchAdapter({ dnsLookup: publicDns })
 			await fetchAdapter(new URL('http://example.com/path'), { method: 'GET' })
 			expect(calls[0]?.input).toBe('http://example.com/path')
 		} finally {

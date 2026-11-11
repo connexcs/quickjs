@@ -16,9 +16,12 @@ This document outlines security improvements needed for the crypto module before
 - [x] Add `maxScryptCost` limit (default: 32768)
 - [x] Add `maxKeyLength` limit (default: 1024 bytes)
 - [x] Add `maxHkdfKeyLength` limit (default: 1024 bytes)
+- [x] Add `maxScryptBlockSize` (default: 16) and `maxScryptParallelization` (default: 4) limits
+- [x] scrypt: guest options are never forwarded to node; N/r/p are validated and `maxmem` is computed host-side (guest `maxmem` ignored)
+- [x] Strict integer validation (no NaN / non-number / fractional) for randomBytes size, pbkdf2 iterations, key lengths, scrypt N/r/p
 
 **Implementation**: `src/sandbox/provide/provideCrypto.ts`
-**Tests**: `src/test/sync/crypto-security.test.ts`
+**Tests**: `src/test/sync/crypto-security.test.ts`, `src/test/sync/crypto-scrypt-limits.test.ts`
 
 ---
 
