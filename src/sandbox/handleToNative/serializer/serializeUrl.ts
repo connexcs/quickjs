@@ -14,7 +14,7 @@ export const serializeUrl: Serializer = (
 	ctx
 		.newFunction('', value => {
 			const v = handleToNative(ctx, value, rootScope, state)
-			d = new URL(v)
+			if (typeof v === 'string') d = new URL(v)
 		})
 		.consume(f => {
 			call(

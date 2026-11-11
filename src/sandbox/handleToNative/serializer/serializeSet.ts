@@ -21,7 +21,7 @@ export const serializeSet: Serializer = (
 				ctx,
 				'internal/serializer/serializeSet.js',
 				`(s,fn) => {
-            s.forEach(fn)
+            Set.prototype.forEach.call(s, value => fn(value))
           }`,
 				undefined,
 				handle,

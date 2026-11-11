@@ -14,14 +14,14 @@ export const serializeDate: Serializer = (
 	ctx
 		.newFunction('', value => {
 			const v = handleToNative(ctx, value, rootScope, state)
-			d.setTime(v)
+			if (typeof v === 'number') d.setTime(v)
 		})
 		.consume(f => {
 			call(
 				ctx,
 				'internal/serializer/serializeDate.js',
 				`(d,fn) => {
-                  fn(d.getTime())
+                  fn(Date.prototype.getTime.call(d))
                 }`,
 				undefined,
 				handle,
